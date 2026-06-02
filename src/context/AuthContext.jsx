@@ -19,7 +19,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = (email, password) => {
     // Hardcoded credentials as requested
-    if (email === 'bayzotech@gmail.com' && password === 'Bayzo20@26') {
+    if (email === 'Vayratech2025@gmail.com' && password === 'VayraTech20@25') {
       const userData = { email, role: 'admin' };
       localStorage.setItem('bayzo_admin_auth', JSON.stringify(userData));
       setUser(userData);

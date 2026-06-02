@@ -13,6 +13,10 @@ export default function Dashboard() {
     vendors: 0,
     totalPartners: 0,
     activePartners: 0,
+    todayOrders: 0,
+    todayRevenue: 0,
+    foodRevenue: 0,
+    deliveryRevenue: 0,
   });
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,15 +31,45 @@ export default function Dashboard() {
         // Orders + Revenue
         let ordersCount = 0;
         let totalRevenue = 0;
+        let todayOrders = 0;
+        let todayRevenue = 0;
+        let foodRevenue = 0;
+        let deliveryRevenue = 0;
         let recentOrdersList = [];
+
         try {
           const ordersSnap = await getDocs(collection(db, 'orders'));
           ordersCount = ordersSnap.size;
+          
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
           ordersSnap.docs.forEach(doc => {
             const data = doc.data();
-            // ✅ FIX: totalAmount field use பண்றோம்
-            totalRevenue += Number(data.totalAmount) || Number(data.total) || 0;
+            const orderTotal = Number(data.totalAmount) || Number(data.total) || 0;
+            const deliveryFee = Number(data.deliveryFee) || 0;
+
+            totalRevenue += orderTotal;
+            foodRevenue += (orderTotal - deliveryFee);
+            deliveryRevenue += deliveryFee;
+
+            let orderDate = null;
+            if (data.createdAt?.toDate) {
+              orderDate = data.createdAt.toDate();
+            } else if (data.createdAt) {
+              orderDate = new Date(data.createdAt);
+            } else if (data.date?.toDate) {
+              orderDate = data.date.toDate();
+            } else if (data.date) {
+              orderDate = new Date(data.date);
+            }
+
+            if (orderDate && orderDate >= today) {
+              todayOrders += 1;
+              todayRevenue += orderTotal;
+            }
           });
+          
           try {
             const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
             const recentSnap = await getDocs(q);
@@ -67,7 +101,18 @@ export default function Dashboard() {
           console.warn('DeliveryPartners error:', e.message);
         }
 
-        setStats({ users: usersCount, orders: ordersCount, revenue: totalRevenue, vendors: vendorsCount, totalPartners, activePartners });
+        setStats({
+          users: usersCount,
+          orders: ordersCount,
+          revenue: totalRevenue,
+          vendors: vendorsCount,
+          totalPartners,
+          activePartners,
+          todayOrders,
+          todayRevenue,
+          foodRevenue,
+          deliveryRevenue
+        });
         setRecentOrders(recentOrdersList);
       } catch (error) {
         console.error('Dashboard fetch error:', error);
@@ -97,11 +142,43 @@ export default function Dashboard() {
       path: '/orders',
     },
     {
+      name: 'Today Orders',
+      value: stats.todayOrders || 0,
+      icon: ShoppingBag,
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-50',
+      path: '/orders',
+    },
+    {
       name: 'Total Revenue (₹)',
       value: `₹${stats.revenue.toLocaleString('en-IN')}`,
       icon: DollarSign,
       color: 'text-orange-600',
       bg: 'bg-orange-50',
+      path: null,
+    },
+    {
+      name: 'Today Revenue (₹)',
+      value: `₹${(stats.todayRevenue || 0).toLocaleString('en-IN')}`,
+      icon: DollarSign,
+      color: 'text-amber-600',
+      bg: 'bg-amber-50',
+      path: null,
+    },
+    {
+      name: 'Revenue (Food) (₹)',
+      value: `₹${(stats.foodRevenue || 0).toLocaleString('en-IN')}`,
+      icon: DollarSign,
+      color: 'text-rose-600',
+      bg: 'bg-rose-50',
+      path: null,
+    },
+    {
+      name: 'Profit (Delivery) (₹)',
+      value: `₹${(stats.deliveryRevenue || 0).toLocaleString('en-IN')}`,
+      icon: DollarSign,
+      color: 'text-indigo-600',
+      bg: 'bg-indigo-50',
       path: null,
     },
     {
@@ -148,8 +225,8 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-gray-500">Overview of VAYRA platform performance.</p>
       </div>
 
-      {/* ✅ 6 stat cards - clickable */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {/* 10 stat cards - clickable */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {statCards.map((item) => (
           <div
             key={item.name}

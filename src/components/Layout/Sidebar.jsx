@@ -53,7 +53,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       )}>
         <div className="flex items-center justify-center h-20 border-b border-gray-100">
-          <img src="/bayzo_logo.png" alt="BAYZO" className="h-12 w-auto" />
+          <span className="text-primary font-black tracking-wider text-2xl">VAYRA</span>
         </div>
         
         <div className="flex-1 overflow-y-auto py-4 no-scrollbar">

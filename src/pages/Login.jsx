@@ -29,17 +29,13 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-lg">
         <div>
           <div className="mx-auto h-24 w-auto flex justify-center items-center">
-            <img 
-              className="h-24 w-auto object-contain" 
-              src="/bayzo_logo.png" 
-              alt="BAYZO Logo" 
-            />
+            <span className="text-primary font-black tracking-wider text-4xl">VAYRA</span>
           </div>
           <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
             Admin Portal
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Sign in to manage BAYZO
+            Sign in to manage VAYRA
           </p>
         </div>
         
@@ -58,7 +54,7 @@ export default function Login() {
                 type="email"
                 required
                 className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                placeholder="admin@bayzo.com"
+                placeholder="Vayratech2025@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />

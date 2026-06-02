@@ -8,15 +8,15 @@ export default function Header({ setIsOpen }) {
     <header className="bg-white shadow-sm border-b border-gray-100 z-10 relative">
       <div className="flex items-center justify-between h-20 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
-          <img src="/bayzo_logo.png" alt="BAYZO" className="h-8 w-auto sm:h-10" />
           <button
             type="button"
-            className="p-2 text-gray-500 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
-            onClick={() => setIsOpen(true)}
+            className="p-2 text-gray-500 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary transition-colors lg:hidden"
+            onClick={() => setIsOpen(prev => !prev)}
           >
             <span className="sr-only">Open sidebar</span>
             <Menu className="h-6 w-6" aria-hidden="true" />
           </button>
+          <span className="text-primary font-black tracking-wider text-2xl">VAYRA</span>
         </div>
         
         <div className="flex items-center gap-4">
