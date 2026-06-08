@@ -287,11 +287,11 @@ export default function Dashboard() {
     startCardListener('totalOrders', 'all-time', null, null, () => handleCardFirstLoad('totalOrders'));
     startCardListener('todayOrders', 'today', null, null, () => handleCardFirstLoad('todayOrders'));
 
-    // 5. Recent Orders Listener (createdAt >= June 7, 2026)
-    const startOfJune7 = new Date(2026, 5, 7, 0, 0, 0); // June is 5 (0-indexed)
+    // 5. Recent Orders Listener (createdAt >= May 31, 2026)
+    const startOfBusiness = new Date(2026, 4, 31, 0, 0, 0); // May 31 (month index 4)
     const qRecent = query(
       collection(db, 'orders'),
-      where('createdAt', '>=', Timestamp.fromDate(startOfJune7)),
+      where('createdAt', '>=', Timestamp.fromDate(startOfBusiness)),
       orderBy('createdAt', 'desc')
     );
 
@@ -316,7 +316,7 @@ export default function Dashboard() {
             } else if (order.createdAt) {
               orderTimestamp = Timestamp.fromDate(new Date(order.createdAt));
             }
-            return orderTimestamp && orderTimestamp.seconds >= Timestamp.fromDate(startOfJune7).seconds;
+            return orderTimestamp && orderTimestamp.seconds >= Timestamp.fromDate(startOfBusiness).seconds;
           });
         setRecentOrders(list);
         recentLoaded = true;
