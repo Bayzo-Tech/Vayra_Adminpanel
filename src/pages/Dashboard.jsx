@@ -565,9 +565,8 @@ export default function Dashboard() {
           <div
             key={item.name}
             onClick={() => handleCardClick(item)}
-            className={`bg-white overflow-hidden rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer ${
-              item.isFilterable ? 'hover:border-orange-200' : 'hover:border-blue-200'
-            }`}
+            className={`bg-white overflow-hidden rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer ${item.isFilterable ? 'hover:border-orange-200' : 'hover:border-blue-200'
+              }`}
           >
             <div className="flex flex-col gap-3">
               <div className={`p-2 rounded-xl ${item.bg} w-fit`}>
@@ -688,12 +687,11 @@ export default function Dashboard() {
                       </td>
                       {/* Status */}
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2.5 py-1 inline-flex text-xs font-semibold rounded-full capitalize ${
-                          orderStatus === 'delivered' ? 'bg-green-50 text-green-700 border border-green-200' :
-                          orderStatus === 'cancelled' ? 'bg-red-50 text-red-700 border border-red-200' :
-                          orderStatus === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                          'bg-yellow-50 text-yellow-700 border border-yellow-250'
-                        }`}>
+                        <span className={`px-2.5 py-1 inline-flex text-xs font-semibold rounded-full capitalize ${orderStatus === 'delivered' ? 'bg-green-50 text-green-700 border border-green-200' :
+                            orderStatus === 'cancelled' ? 'bg-red-50 text-red-700 border border-red-200' :
+                              orderStatus === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                'bg-yellow-50 text-yellow-700 border border-yellow-250'
+                          }`}>
                           {orderStatus}
                         </span>
                       </td>
@@ -743,11 +741,10 @@ export default function Dashboard() {
                     key={opt.value}
                     type="button"
                     onClick={() => applyFilter(opt.value)}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold border text-center transition-all ${
-                      tempFilterType === opt.value
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold border text-center transition-all ${tempFilterType === opt.value
                         ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
                         : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
-                    }`}
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -758,11 +755,10 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setTempFilterType('custom')}
-                  className={`w-full px-4 py-2.5 rounded-xl text-sm font-semibold border text-center transition-all ${
-                    tempFilterType === 'custom'
+                  className={`w-full px-4 py-2.5 rounded-xl text-sm font-semibold border text-center transition-all ${tempFilterType === 'custom'
                       ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
                       : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
-                  }`}
+                    }`}
                 >
                   Custom Date Range
                 </button>
