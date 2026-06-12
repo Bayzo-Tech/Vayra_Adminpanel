@@ -1,19 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, orderBy, query, doc, updateDoc } from 'firebase/firestore';
 
 const tabs = ['All', 'Pending', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled'];
-
 const STATUS_OPTIONS = ['placed', 'preparing', 'out for delivery', 'delivered', 'cancelled'];
-
 const statusColors = {
-  placed:              'bg-yellow-100 text-yellow-800',
-  pending:             'bg-yellow-100 text-yellow-800',
-  preparing:           'bg-blue-100 text-blue-800',
-  'out for delivery':  'bg-purple-100 text-purple-800',
-  delivered:           'bg-green-100 text-green-800',
-  cancelled:           'bg-red-100 text-red-800',
-  failed:              'bg-red-100 text-red-800',
+  placed: 'bg-yellow-100 text-yellow-800',
+  pending: 'bg-yellow-100 text-yellow-800',
+  preparing: 'bg-blue-100 text-blue-800',
+  'out for delivery': 'bg-purple-100 text-purple-800',
+  delivered: 'bg-green-100 text-green-800',
+  cancelled: 'bg-red-100 text-red-800',
+  failed: 'bg-red-100 text-red-800',
 };
 
 export default function Orders() {
@@ -23,17 +21,65 @@ export default function Orders() {
   const [updatingId, setUpdatingId] = useState(null);
   const [sendingOtpId, setSendingOtpId] = useState(null);
   const [otpMessage, setOtpMessage] = useState(null);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [newOrderAlert, setNewOrderAlert] = useState(null);
 
+  const audioRef = useRef(null);
+  const knownOrderIds = useRef(null); // null = first load
+  const isFirstLoad = useRef(true);
+
+  // ── Init audio ──────────────────────────────────────────────
+  useEffect(() => {
+    audioRef.current = new Audio('/sounds/Order_notification_sound.wav');
+    audioRef.current.loop = true;
+  }, []);
+
+  const enableSound = () => {
+    // Unlock browser autoplay by playing + pausing on user gesture
+    audioRef.current.play().then(() => {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setSoundEnabled(true);
+    });
+  };
+
+  const stopSound = () => {
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+    setNewOrderAlert(null);
+  };
+
+  // ── Firestore listener ───────────────────────────────────────
   useEffect(() => {
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      if (isFirstLoad.current) {
+        // First load — just save IDs, don't ring
+        knownOrderIds.current = new Set(fetched.map(o => o.id));
+        isFirstLoad.current = false;
+      } else {
+        // Detect genuinely new orders
+        const newOrders = fetched.filter(
+          o => !knownOrderIds.current.has(o.id) && o.orderStatus !== 'pending'
+        );
+        if (newOrders.length > 0 && soundEnabled) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
+          setNewOrderAlert(newOrders[0]); // show banner for latest
+        }
+        // Update known IDs
+        newOrders.forEach(o => knownOrderIds.current.add(o.id));
+      }
+
       setOrders(fetched);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [soundEnabled]);
 
+  // ── Handlers ────────────────────────────────────────────────
   const handleStatusChange = async (orderId, newStatus) => {
     setUpdatingId(orderId);
     try {
@@ -77,27 +123,62 @@ export default function Orders() {
 
   const getItemsSummary = (order) => {
     if (order.itemsSummary) return order.itemsSummary;
-    if (order.items && order.items.length > 0) {
-      return order.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
-    }
+    if (order.items?.length > 0) return order.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
     return '—';
   };
 
-  const filteredOrders = orders.filter(order => {
-    if (activeTab === 'All') return true;
-    return order.orderStatus?.toLowerCase() === activeTab.toLowerCase();
-  });
+  const filteredOrders = orders.filter(order =>
+    activeTab === 'All' ? true : order.orderStatus?.toLowerCase() === activeTab.toLowerCase()
+  );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="space-y-6">
+
+      {/* ── Enable Sound Banner (shows until user clicks) ── */}
+      {!soundEnabled && (
+        <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+          <span className="text-sm text-orange-700 font-medium">🔔 Enable order notification sound</span>
+          <button
+            onClick={enableSound}
+            className="bg-orange-500 text-white text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-orange-600 transition-colors"
+          >
+            Enable Sound
+          </button>
+        </div>
+      )}
+
+      {/* ── New Order Alert Banner ── */}
+      {newOrderAlert && (
+        <div className="flex items-center justify-between bg-green-50 border border-green-300 rounded-xl px-4 py-3 animate-pulse">
+          <div>
+            <p className="text-sm font-bold text-green-700">🛎️ New Order Received!</p>
+            <p className="text-xs text-green-600">
+              #{newOrderAlert.id.slice(0, 8).toUpperCase()} — {newOrderAlert.customerName || 'Customer'} — ₹{newOrderAlert.totalAmount || 0}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={stopSound}
+              className="bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-green-600 transition-colors"
+            >
+              ✅ Accept
+            </button>
+            <button
+              onClick={stopSound}
+              className="bg-red-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-red-600 transition-colors"
+            >
+              ❌ Reject
+            </button>
+          </div>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
         <p className="mt-1 text-sm text-gray-500">Monitor and manage all customer orders.</p>
@@ -119,9 +200,7 @@ export default function Orders() {
             >
               {tab}
               <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
-                {tab === 'All'
-                  ? orders.length
-                  : orders.filter(o => o.orderStatus?.toLowerCase() === tab.toLowerCase()).length}
+                {tab === 'All' ? orders.length : orders.filter(o => o.orderStatus?.toLowerCase() === tab.toLowerCase()).length}
               </span>
             </button>
           ))}
@@ -158,7 +237,6 @@ export default function Orders() {
                     <div className="text-xs text-gray-500 max-w-xs truncate">{getItemsSummary(order)}</div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
-                    {/* ✅ FIX: totalAmount use பண்றோம் */}
                     <div className="text-sm font-bold text-gray-900">₹{order.totalAmount || order.total || 0}</div>
                     <div className={['text-xs font-medium mt-0.5', order.paymentStatus === 'paid' ? 'text-green-600' : 'text-yellow-600'].join(' ')}>
                       {order.paymentStatus === 'paid' ? '✓ Paid' : '⏳ Pending'}
@@ -169,18 +247,13 @@ export default function Orders() {
                       value={order.orderStatus?.toLowerCase() || 'placed'}
                       onChange={(e) => handleStatusChange(order.id, e.target.value)}
                       disabled={updatingId === order.id}
-                      className={[
-                        "text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer focus:outline-none",
-                        statusColors[order.orderStatus?.toLowerCase()] || 'bg-yellow-100 text-yellow-800'
-                      ].join(' ')}
+                      className={['text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer focus:outline-none', statusColors[order.orderStatus?.toLowerCase()] || 'bg-yellow-100 text-yellow-800'].join(' ')}
                     >
                       {STATUS_OPTIONS.map(s => (
                         <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
                       ))}
                     </select>
-                    {updatingId === order.id && (
-                      <div className="text-xs text-gray-400 mt-1">Updating...</div>
-                    )}
+                    {updatingId === order.id && <div className="text-xs text-gray-400 mt-1">Updating...</div>}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
                     {order.orderStatus?.toLowerCase() === 'out for delivery' && (
@@ -192,7 +265,7 @@ export default function Orders() {
                         >
                           {sendingOtpId === order.id ? 'Sending...' : '📱 Send OTP'}
                         </button>
-                        {otpMessage && otpMessage.id === order.id && (
+                        {otpMessage?.id === order.id && (
                           <div className={['text-xs mt-1 font-medium', otpMessage.ok ? 'text-green-600' : 'text-red-500'].join(' ')}>
                             {otpMessage.msg}
                           </div>
@@ -204,9 +277,7 @@ export default function Orders() {
               ))}
               {filteredOrders.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">
-                    No orders found.
-                  </td>
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">No orders found.</td>
                 </tr>
               )}
             </tbody>
