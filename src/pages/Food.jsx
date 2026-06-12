@@ -24,7 +24,7 @@ export default function Food() {
   const [foods, setFoods] = useState([]);
   const [categories, setCategories] = useState([]);
   const [areas, setAreas] = useState([]);
-  const [approvedVendors, setApprovedVendors] = useState([]); // ✅ NEW
+  const [approvedVendors, setApprovedVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeArea, setActiveArea] = useState('All');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -36,7 +36,8 @@ export default function Food() {
   const [formData, setFormData] = useState({
     name: '', description: '', price: '', offer: '0',
     area: '', categoryId: '', stallName: '', foodType: 'veg',
-    vendorId: '' // ✅ NEW
+    vendorId: '',
+    packingFee: '5' // ✅ NEW
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
@@ -45,21 +46,17 @@ export default function Food() {
 
   const fetchData = async () => {
     try {
-      // Areas
       const beachSnap = await getDocs(collection(db, 'beaches'));
       const uniqueAreas = [...new Set(beachSnap.docs.map(d => d.data().area).filter(Boolean))];
       setAreas(uniqueAreas);
 
-      // Foods
       const foodsSnap = await getDocs(collection(db, 'foods'));
       setFoods(foodsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-      // Categories
       const catSnap = await getDocs(collection(db, 'categories'));
       const catList = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       setCategories(catList);
 
-      // ✅ NEW: Approved Vendors only
       const vendorSnap = await getDocs(
         query(collection(db, 'vendors'), where('status', '==', 'approved'))
       );
@@ -92,7 +89,6 @@ export default function Food() {
     }
   };
 
-  // ✅ NEW: Vendor select பண்ணும்போது stallName auto-fill
   const handleVendorChange = (vendorId) => {
     const vendor = approvedVendors.find(v => v.id === vendorId);
     setFormData(prev => ({
@@ -120,8 +116,9 @@ export default function Food() {
         area: formData.area,
         categoryId: formData.categoryId,
         stallName: formData.stallName,
-        vendorId: formData.vendorId, // ✅ NEW: vendorId save பண்றோம்
+        vendorId: formData.vendorId,
         foodType: formData.foodType,
+        packingFee: Number(formData.packingFee), // ✅ NEW
         createdAt: new Date()
       };
       const docRef = await addDoc(collection(db, 'foods'), foodData);
@@ -153,7 +150,8 @@ export default function Food() {
       area: areas[0] || '', categoryId: categories[0]?.id || '',
       stallName: approvedVendors[0]?.stallName || '',
       vendorId: approvedVendors[0]?.id || '',
-      foodType: 'veg'
+      foodType: 'veg',
+      packingFee: '5' // ✅ NEW
     });
     setImagePreview('');
     setImageFile(null);
@@ -280,6 +278,10 @@ export default function Food() {
                     <div className="flex gap-1 flex-wrap mb-2">
                       <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">{food.area}</span>
                       <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">{getCategoryName(food.categoryId)}</span>
+                      {/* ✅ NEW: Packing fee badge */}
+                      {food.packingFee > 0 && (
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-orange-50 text-orange-500">📦 ₹{food.packingFee} packing</span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-500 line-clamp-2 flex-1 mb-3">{food.description}</p>
                     <div className="flex justify-end pt-3 border-t border-gray-50">
@@ -355,7 +357,7 @@ export default function Food() {
                 </div>
               </div>
 
-              {/* ✅ NEW: Vendor Dropdown - approved vendors மட்டும் */}
+              {/* Vendor Dropdown */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Vendor / Stall *
@@ -398,8 +400,8 @@ export default function Food() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
               </div>
 
-              {/* Price & Offer */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Price, Offer & Packing Fee */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Price (₹) *</label>
                   <input type="number" required min="0" placeholder="0"
@@ -413,6 +415,14 @@ export default function Food() {
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                     value={formData.offer}
                     onChange={(e) => setFormData({ ...formData, offer: e.target.value })} />
+                </div>
+                {/* ✅ NEW: Packing Fee input */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Packing (₹)</label>
+                  <input type="number" min="0" placeholder="5"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    value={formData.packingFee}
+                    onChange={(e) => setFormData({ ...formData, packingFee: e.target.value })} />
                 </div>
               </div>
 
