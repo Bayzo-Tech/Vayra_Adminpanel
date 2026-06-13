@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, doc, deleteDoc, query, where } from 'firebase/firestore';
-import { Plus, XCircle, Search, Image as ImageIcon, Camera, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
+import { Plus, XCircle, Search, Image as ImageIcon, Camera, Trash2, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { db } from '../firebase';
 
 const CLOUD_NAME = "dvkjhuzdr";
@@ -33,11 +33,12 @@ export default function Food() {
   const itemsPerPage = 6;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingFood, setEditingFood] = useState(null); // ✅ NEW: track edit
   const [formData, setFormData] = useState({
     name: '', description: '', price: '', offer: '0',
     area: '', categoryId: '', stallName: '', foodType: 'veg',
     vendorId: '',
-    packingFee: '5' // ✅ NEW
+    packingFee: '5'
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
@@ -89,13 +90,31 @@ export default function Food() {
     }
   };
 
+  // ✅ FIX Problem 2: vendor dropdown now filters by selected area
+  const filteredVendorsByArea = approvedVendors.filter(
+    v => !formData.area || v.area === formData.area || v.area === 'Both' || formData.area === 'Both'
+  );
+
   const handleVendorChange = (vendorId) => {
     const vendor = approvedVendors.find(v => v.id === vendorId);
     setFormData(prev => ({
       ...prev,
       vendorId,
       stallName: vendor?.stallName || '',
-      area: vendor?.area || prev.area,
+    }));
+  };
+
+  // ✅ FIX Problem 2: when area changes, reset vendor to first matching vendor
+  const handleAreaChange = (newArea) => {
+    const matchingVendors = approvedVendors.filter(
+      v => !newArea || v.area === newArea || v.area === 'Both' || newArea === 'Both'
+    );
+    const firstVendor = matchingVendors[0];
+    setFormData(prev => ({
+      ...prev,
+      area: newArea,
+      vendorId: firstVendor?.id || '',
+      stallName: firstVendor?.stallName || '',
     }));
   };
 
@@ -103,7 +122,7 @@ export default function Food() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      let imageUrl = "";
+      let imageUrl = editingFood?.image || "";
       if (imageFile) {
         imageUrl = await uploadToCloudinary(imageFile);
       }
@@ -118,14 +137,22 @@ export default function Food() {
         stallName: formData.stallName,
         vendorId: formData.vendorId,
         foodType: formData.foodType,
-        packingFee: Number(formData.packingFee), // ✅ NEW
-        createdAt: new Date()
+        packingFee: Number(formData.packingFee),
+        createdAt: editingFood?.createdAt || new Date()
       };
-      const docRef = await addDoc(collection(db, 'foods'), foodData);
-      setFoods(prev => [...prev, { id: docRef.id, ...foodData }]);
+
+      if (editingFood) {
+        // ✅ NEW: Edit mode — update existing doc
+        await updateDoc(doc(db, 'foods', editingFood.id), foodData);
+        setFoods(prev => prev.map(f => f.id === editingFood.id ? { id: editingFood.id, ...foodData } : f));
+      } else {
+        // Add new
+        const docRef = await addDoc(collection(db, 'foods'), foodData);
+        setFoods(prev => [...prev, { id: docRef.id, ...foodData }]);
+      }
       closeModal();
     } catch (error) {
-      console.error('Error adding food:', error);
+      console.error('Error saving food:', error);
       alert("Failed to save. Please try again.");
     } finally {
       setIsSubmitting(false);
@@ -143,15 +170,36 @@ export default function Food() {
     }
   };
 
+  // ✅ NEW: Open modal pre-filled for editing
+  const handleEditFood = (food) => {
+    setEditingFood(food);
+    setFormData({
+      name: food.name || '',
+      description: food.description || '',
+      price: food.price?.toString() || '',
+      offer: food.offer?.toString() || '0',
+      area: food.area || areas[0] || '',
+      categoryId: food.categoryId || categories[0]?.id || '',
+      stallName: food.stallName || '',
+      vendorId: food.vendorId || '',
+      foodType: food.foodType || 'veg',
+      packingFee: food.packingFee?.toString() || '5',
+    });
+    setImagePreview(food.image || '');
+    setImageFile(null);
+    setIsModalOpen(true);
+  };
+
   const closeModal = () => {
     setIsModalOpen(false);
+    setEditingFood(null); // ✅ NEW: clear edit state
     setFormData({
       name: '', description: '', price: '', offer: '0',
       area: areas[0] || '', categoryId: categories[0]?.id || '',
       stallName: approvedVendors[0]?.stallName || '',
       vendorId: approvedVendors[0]?.id || '',
       foodType: 'veg',
-      packingFee: '5' // ✅ NEW
+      packingFee: '5'
     });
     setImagePreview('');
     setImageFile(null);
@@ -278,13 +326,19 @@ export default function Food() {
                     <div className="flex gap-1 flex-wrap mb-2">
                       <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600">{food.area}</span>
                       <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">{getCategoryName(food.categoryId)}</span>
-                      {/* ✅ NEW: Packing fee badge */}
                       {food.packingFee > 0 && (
                         <span className="px-2 py-0.5 text-xs rounded-full bg-orange-50 text-orange-500">📦 ₹{food.packingFee} packing</span>
                       )}
                     </div>
                     <p className="text-sm text-gray-500 line-clamp-2 flex-1 mb-3">{food.description}</p>
-                    <div className="flex justify-end pt-3 border-t border-gray-50">
+                    {/* ✅ NEW: Edit + Delete buttons */}
+                    <div className="flex justify-end gap-2 pt-3 border-t border-gray-50">
+                      <button
+                        onClick={() => handleEditFood(food)}
+                        className="p-2 text-gray-400 hover:text-blue-500 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => handleDeleteFood(food.id)}
                         className="p-2 text-gray-400 hover:text-red-500 bg-gray-50 hover:bg-red-50 rounded-lg transition-colors"
@@ -324,12 +378,13 @@ export default function Food() {
         )}
       </div>
 
-      {/* Add Food Modal */}
+      {/* Add / Edit Food Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
             <div className="px-6 py-4 border-b flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Add New Food Item</h3>
+              {/* ✅ NEW: Dynamic title */}
+              <h3 className="text-lg font-bold text-gray-900">{editingFood ? 'Edit Food Item' : 'Add New Food Item'}</h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
                 <XCircle className="w-6 h-6" />
               </button>
@@ -363,9 +418,10 @@ export default function Food() {
                   Vendor / Stall *
                   <span className="ml-2 text-xs text-green-600 font-normal">✓ Approved vendors only</span>
                 </label>
-                {approvedVendors.length === 0 ? (
+                {/* ✅ FIX: use filteredVendorsByArea */}
+                {filteredVendorsByArea.length === 0 ? (
                   <div className="w-full px-3 py-2.5 border border-orange-200 bg-orange-50 rounded-xl text-sm text-orange-600">
-                    ⚠️ No approved vendors yet. Approve vendors first from Vendors page.
+                    ⚠️ No approved vendors for this area. Change area or approve vendors first.
                   </div>
                 ) : (
                   <select
@@ -375,7 +431,7 @@ export default function Food() {
                     onChange={(e) => handleVendorChange(e.target.value)}
                   >
                     <option value="">Select Vendor</option>
-                    {approvedVendors.map(v => (
+                    {filteredVendorsByArea.map(v => (
                       <option key={v.id} value={v.id}>{v.stallName}</option>
                     ))}
                   </select>
@@ -416,7 +472,6 @@ export default function Food() {
                     value={formData.offer}
                     onChange={(e) => setFormData({ ...formData, offer: e.target.value })} />
                 </div>
-                {/* ✅ NEW: Packing Fee input */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Packing (₹)</label>
                   <input type="number" min="0" placeholder="5"
@@ -457,7 +512,7 @@ export default function Food() {
                   <select
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                     value={formData.area}
-                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                    onChange={(e) => handleAreaChange(e.target.value)} // ✅ FIX: use handleAreaChange
                   >
                     {areas.map(a => <option key={a} value={a}>{a}</option>)}
                     <option value="Both">Both</option>
@@ -485,11 +540,11 @@ export default function Food() {
                   className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
                   Cancel
                 </button>
-                <button type="submit" disabled={isSubmitting || approvedVendors.length === 0}
+                <button type="submit" disabled={isSubmitting || filteredVendorsByArea.length === 0}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-60">
                   {isSubmitting
                     ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Uploading...</>
-                    : 'Save Food'}
+                    : editingFood ? 'Update Food' : 'Save Food' /* ✅ NEW: dynamic button label */}
                 </button>
               </div>
             </form>
