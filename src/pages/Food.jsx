@@ -33,7 +33,7 @@ export default function Food() {
   const itemsPerPage = 6;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editingFood, setEditingFood] = useState(null); // ✅ NEW: track edit
+  const [editingFood, setEditingFood] = useState(null);
   const [formData, setFormData] = useState({
     name: '', description: '', price: '', offer: '0',
     area: '', categoryId: '', stallName: '', foodType: 'veg',
@@ -68,12 +68,16 @@ export default function Food() {
       }));
       setApprovedVendors(vendorList);
 
+      const firstArea = uniqueAreas[0] || '';
+      const firstVendor = vendorList.find(v => v.area === firstArea || v.area === 'Both') || vendorList[0];
+      const firstCat = catList.find(c => c.area === firstArea || c.area === 'Both') || catList[0];
+
       setFormData(prev => ({
         ...prev,
-        area: uniqueAreas[0] || '',
-        categoryId: catList[0]?.id || '',
-        stallName: vendorList[0]?.stallName || '',
-        vendorId: vendorList[0]?.id || '',
+        area: firstArea,
+        categoryId: firstCat?.id || '',
+        stallName: firstVendor?.stallName || '',
+        vendorId: firstVendor?.id || '',
       }));
     } catch (error) {
       console.error('Error:', error);
@@ -90,9 +94,14 @@ export default function Food() {
     }
   };
 
-  // ✅ FIX Problem 2: vendor dropdown now filters by selected area
+  // ✅ Vendors filtered by selected area
   const filteredVendorsByArea = approvedVendors.filter(
     v => !formData.area || v.area === formData.area || v.area === 'Both' || formData.area === 'Both'
+  );
+
+  // ✅ Categories filtered by selected area
+  const filteredModalCategories = categories.filter(
+    c => c.area === formData.area || c.area === 'Both'
   );
 
   const handleVendorChange = (vendorId) => {
@@ -104,17 +113,22 @@ export default function Food() {
     }));
   };
 
-  // ✅ FIX Problem 2: when area changes, reset vendor to first matching vendor
+  // ✅ When area changes: reset vendor AND category to first matching ones
   const handleAreaChange = (newArea) => {
     const matchingVendors = approvedVendors.filter(
-      v => !newArea || v.area === newArea || v.area === 'Both' || newArea === 'Both'
+      v => v.area === newArea || v.area === 'Both' || newArea === 'Both'
+    );
+    const matchingCategories = categories.filter(
+      c => c.area === newArea || c.area === 'Both'
     );
     const firstVendor = matchingVendors[0];
+    const firstCat = matchingCategories[0];
     setFormData(prev => ({
       ...prev,
       area: newArea,
       vendorId: firstVendor?.id || '',
       stallName: firstVendor?.stallName || '',
+      categoryId: firstCat?.id || '', // ✅ FIX: reset category to match new area
     }));
   };
 
@@ -142,11 +156,9 @@ export default function Food() {
       };
 
       if (editingFood) {
-        // ✅ NEW: Edit mode — update existing doc
         await updateDoc(doc(db, 'foods', editingFood.id), foodData);
         setFoods(prev => prev.map(f => f.id === editingFood.id ? { id: editingFood.id, ...foodData } : f));
       } else {
-        // Add new
         const docRef = await addDoc(collection(db, 'foods'), foodData);
         setFoods(prev => [...prev, { id: docRef.id, ...foodData }]);
       }
@@ -170,7 +182,6 @@ export default function Food() {
     }
   };
 
-  // ✅ NEW: Open modal pre-filled for editing
   const handleEditFood = (food) => {
     setEditingFood(food);
     setFormData({
@@ -192,12 +203,16 @@ export default function Food() {
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingFood(null); // ✅ NEW: clear edit state
+    setEditingFood(null);
+    const firstArea = areas[0] || '';
+    const firstVendor = approvedVendors.find(v => v.area === firstArea || v.area === 'Both') || approvedVendors[0];
+    const firstCat = categories.find(c => c.area === firstArea || c.area === 'Both') || categories[0];
     setFormData({
       name: '', description: '', price: '', offer: '0',
-      area: areas[0] || '', categoryId: categories[0]?.id || '',
-      stallName: approvedVendors[0]?.stallName || '',
-      vendorId: approvedVendors[0]?.id || '',
+      area: firstArea,
+      categoryId: firstCat?.id || '',
+      stallName: firstVendor?.stallName || '',
+      vendorId: firstVendor?.id || '',
       foodType: 'veg',
       packingFee: '5'
     });
@@ -205,16 +220,8 @@ export default function Food() {
     setImageFile(null);
   };
 
-  const filteredModalCategories = categories.filter(
-    c => c.area === formData.area || c.area === 'Both'
-  );
-
-  useEffect(() => {
-    if (filteredModalCategories.length > 0) {
-      const isValid = filteredModalCategories.some(c => c.id === formData.categoryId);
-      if (!isValid) setFormData(prev => ({ ...prev, categoryId: filteredModalCategories[0].id }));
-    }
-  }, [formData.area]);
+  // ✅ REMOVED the useEffect that was incorrectly overriding categoryId on area change
+  // handleAreaChange now does this correctly and atomically
 
   const getCategoryName = (catId) => categories.find(c => c.id === catId)?.name || 'Unknown';
 
@@ -331,7 +338,6 @@ export default function Food() {
                       )}
                     </div>
                     <p className="text-sm text-gray-500 line-clamp-2 flex-1 mb-3">{food.description}</p>
-                    {/* ✅ NEW: Edit + Delete buttons */}
                     <div className="flex justify-end gap-2 pt-3 border-t border-gray-50">
                       <button
                         onClick={() => handleEditFood(food)}
@@ -383,7 +389,6 @@ export default function Food() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
             <div className="px-6 py-4 border-b flex justify-between items-center">
-              {/* ✅ NEW: Dynamic title */}
               <h3 className="text-lg font-bold text-gray-900">{editingFood ? 'Edit Food Item' : 'Add New Food Item'}</h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
                 <XCircle className="w-6 h-6" />
@@ -412,13 +417,41 @@ export default function Food() {
                 </div>
               </div>
 
+              {/* Area first — so vendor & category filter correctly */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Area *</label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    value={formData.area}
+                    onChange={(e) => handleAreaChange(e.target.value)}
+                  >
+                    {areas.map(a => <option key={a} value={a}>{a}</option>)}
+                    <option value="Both">Both</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                  <select required
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    value={formData.categoryId}
+                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+                  >
+                    {filteredModalCategories.length === 0
+                      ? <option value="">No categories for this area</option>
+                      : filteredModalCategories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
               {/* Vendor Dropdown */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Vendor / Stall *
                   <span className="ml-2 text-xs text-green-600 font-normal">✓ Approved vendors only</span>
                 </label>
-                {/* ✅ FIX: use filteredVendorsByArea */}
                 {filteredVendorsByArea.length === 0 ? (
                   <div className="w-full px-3 py-2.5 border border-orange-200 bg-orange-50 rounded-xl text-sm text-orange-600">
                     ⚠️ No approved vendors for this area. Change area or approve vendors first.
@@ -505,35 +538,6 @@ export default function Food() {
                 </label>
               </div>
 
-              {/* Area & Category */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Area *</label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                    value={formData.area}
-                    onChange={(e) => handleAreaChange(e.target.value)} // ✅ FIX: use handleAreaChange
-                  >
-                    {areas.map(a => <option key={a} value={a}>{a}</option>)}
-                    <option value="Both">Both</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-                  <select required
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                    value={formData.categoryId}
-                    onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                  >
-                    {filteredModalCategories.length === 0
-                      ? <option value="">No categories for this area</option>
-                      : filteredModalCategories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-
               {/* Buttons */}
               <div className="flex gap-3 pt-2 border-t border-gray-100">
                 <button type="button" onClick={closeModal}
@@ -544,7 +548,7 @@ export default function Food() {
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-60">
                   {isSubmitting
                     ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Uploading...</>
-                    : editingFood ? 'Update Food' : 'Save Food' /* ✅ NEW: dynamic button label */}
+                    : editingFood ? 'Update Food' : 'Save Food'}
                 </button>
               </div>
             </form>
