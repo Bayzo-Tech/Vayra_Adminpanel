@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { db } from '../firebase';
 import clsx from 'clsx';
 
@@ -33,8 +33,8 @@ export default function Categories() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null); // ✅ NEW
 
-  // ✅ FIX: fetchData முன்னே declare பண்றோம், useEffect-க்கு முன்னே
   const fetchData = async () => {
     try {
       const beachSnap = await getDocs(collection(db, 'beaches'));
@@ -54,7 +54,6 @@ export default function Categories() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // ✅ FIX: setCurrentPage direct call வேண்டாம் - activeArea watch பண்ணி reset
   useEffect(() => {
     setCurrentPage(1);
   }, [activeArea]);
@@ -71,7 +70,7 @@ export default function Categories() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      let imageUrl = "";
+      let imageUrl = editingCategory?.image || "";
       if (imageFile) {
         imageUrl = await uploadToCloudinary(imageFile);
       }
@@ -80,14 +79,22 @@ export default function Categories() {
         description: formData.description,
         area: formData.area,
         image: imageUrl,
-        createdAt: new Date()
+        createdAt: editingCategory?.createdAt || new Date()
       };
-      const docRef = await addDoc(collection(db, 'categories'), categoryData);
-      setCategories(prev => [...prev, { id: docRef.id, ...categoryData }]);
+
+      if (editingCategory) {
+        // ✅ NEW: Edit mode — update existing doc
+        await updateDoc(doc(db, 'categories', editingCategory.id), categoryData);
+        setCategories(prev => prev.map(c => c.id === editingCategory.id ? { id: editingCategory.id, ...categoryData } : c));
+      } else {
+        // Add new
+        const docRef = await addDoc(collection(db, 'categories'), categoryData);
+        setCategories(prev => [...prev, { id: docRef.id, ...categoryData }]);
+      }
       closeModal();
     } catch (error) {
-      console.error("Error adding category:", error);
-      alert("Failed to add category. Please try again.");
+      console.error("Error saving category:", error);
+      alert("Failed to save category. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -104,8 +111,22 @@ export default function Categories() {
     }
   };
 
+  // ✅ NEW: Open modal pre-filled for editing
+  const handleEditCategory = (category) => {
+    setEditingCategory(category);
+    setFormData({
+      name: category.name || '',
+      description: category.description || '',
+      area: category.area || areas[1] || '',
+    });
+    setImagePreview(category.image || '');
+    setImageFile(null);
+    setIsModalOpen(true);
+  };
+
   const closeModal = () => {
     setIsModalOpen(false);
+    setEditingCategory(null); // ✅ NEW
     setFormData({ name: '', description: '', area: areas[1] || '' });
     setImagePreview('');
     setImageFile(null);
@@ -178,7 +199,12 @@ export default function Categories() {
                     </span>
                   </div>
                   <p className="text-sm text-gray-500 flex-1 line-clamp-2 mb-4">{category.description}</p>
-                  <div className="flex justify-end pt-4 border-t border-gray-50">
+                  {/* ✅ NEW: Edit + Delete buttons */}
+                  <div className="flex justify-end gap-2 pt-4 border-t border-gray-50">
+                    <button onClick={() => handleEditCategory(category)}
+                      className="p-2 text-gray-400 hover:text-blue-500 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors">
+                      <Pencil className="w-4 h-4" />
+                    </button>
                     <button onClick={() => handleDeleteCategory(category.id)}
                       className="p-2 text-gray-400 hover:text-red-500 bg-gray-50 hover:bg-red-50 rounded-lg transition-colors">
                       <Trash2 className="w-4 h-4" />
@@ -219,7 +245,8 @@ export default function Categories() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
             <div className="px-6 py-4 border-b flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Add New Category</h3>
+              {/* ✅ NEW: Dynamic title */}
+              <h3 className="text-lg font-bold text-gray-900">{editingCategory ? 'Edit Category' : 'Add New Category'}</h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
                 <XCircle className="w-6 h-6" />
               </button>
@@ -280,7 +307,7 @@ export default function Categories() {
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-60">
                   {isSubmitting
                     ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading & Saving...</>
-                    : 'Save Category'}
+                    : editingCategory ? 'Update Category' : 'Save Category' /* ✅ NEW: dynamic label */}
                 </button>
               </div>
             </form>
