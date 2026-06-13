@@ -154,8 +154,10 @@ export default function Dashboard() {
       snap.docs.forEach((doc) => {
         const data = doc.data();
 
-        // Exclude failed orders
-        if (data.orderStatus === 'failed' || data.paymentStatus === 'failed' || data.status === 'failed') {
+        // Exclude cancelled/failed orders and only count paid orders
+        const status = (data.orderStatus || data.status || '').toLowerCase();
+        const paymentStatus = (data.paymentStatus || '').toLowerCase();
+        if (status === 'cancelled' || status === 'failed' || paymentStatus !== 'paid') {
           return;
         }
 

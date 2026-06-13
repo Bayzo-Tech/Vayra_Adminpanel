@@ -62,7 +62,8 @@ export default function Orders() {
       } else {
         // Detect genuinely new orders
         const newOrders = fetched.filter(
-          o => !knownOrderIds.current.has(o.id) && o.orderStatus !== 'pending'
+          o => !knownOrderIds.current.has(o.id) &&
+            (o.orderStatus === 'placed' || o.orderStatus === 'pending')
         );
         if (newOrders.length > 0 && soundEnabled) {
           audioRef.current.currentTime = 0;
