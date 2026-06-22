@@ -3,12 +3,13 @@ import { db } from '../firebase';
 import { collection, onSnapshot, orderBy, query, doc, updateDoc } from 'firebase/firestore';
 
 const tabs = ['All', 'Pending', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled'];
-const STATUS_OPTIONS = ['placed', 'preparing', 'out for delivery', 'delivered', 'cancelled'];
+const STATUS_OPTIONS = ['placed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
 const statusColors = {
   placed: 'bg-yellow-100 text-yellow-800',
   pending: 'bg-yellow-100 text-yellow-800',
   preparing: 'bg-blue-100 text-blue-800',
   'out for delivery': 'bg-purple-100 text-purple-800',
+  'out_for_delivery': 'bg-purple-100 text-purple-800',
   delivered: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800',
   failed: 'bg-red-100 text-red-800',
@@ -129,7 +130,7 @@ export default function Orders() {
   };
 
   const filteredOrders = orders.filter(order =>
-    activeTab === 'All' ? true : order.orderStatus?.toLowerCase() === activeTab.toLowerCase()
+    activeTab === 'All' ? true : order.orderStatus?.toLowerCase().replace(/ /g, '_') === activeTab.toLowerCase().replace(/ /g, '_')
   );
 
   if (loading) return (
@@ -201,7 +202,7 @@ export default function Orders() {
             >
               {tab}
               <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
-                {tab === 'All' ? orders.length : orders.filter(o => o.orderStatus?.toLowerCase() === tab.toLowerCase()).length}
+                {tab === 'All' ? orders.length : orders.filter(o => o.orderStatus?.toLowerCase().replace(/ /g, '_') === tab.toLowerCase().replace(/ /g, '_')).length}
               </span>
             </button>
           ))}
@@ -235,6 +236,9 @@ export default function Orders() {
                   </td>
                   <td className="px-4 py-4">
                     <div className="text-sm font-medium text-gray-900">{order.vendorName || '—'}</div>
+                    {order.deliveryPartnerName && (
+                      <div className="text-xs text-purple-600">🛵 {order.deliveryPartnerName}</div>
+                    )}
                     <div className="text-xs text-gray-500 max-w-xs truncate">{getItemsSummary(order)}</div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
@@ -255,6 +259,11 @@ export default function Orders() {
                       ))}
                     </select>
                     {updatingId === order.id && <div className="text-xs text-gray-400 mt-1">Updating...</div>}
+                    {order.orderStatus?.toLowerCase() === 'cancelled' && order.cancelledBy && (
+                      <div className="text-xs text-red-500 font-medium mt-1">
+                        {order.cancelledBy === 'vendor' ? '🏪 Vendor cancelled' : order.cancelledBy === 'delivery' ? '🛵 Delivery cancelled' : '👤 Customer cancelled'}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
                     {order.orderStatus?.toLowerCase() === 'out for delivery' && (
