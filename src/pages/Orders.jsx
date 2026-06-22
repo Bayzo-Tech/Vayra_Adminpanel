@@ -246,6 +246,12 @@ export default function Orders() {
                     <div className={['text-xs font-medium mt-0.5', order.paymentStatus === 'paid' ? 'text-green-600' : 'text-yellow-600'].join(' ')}>
                       {order.paymentStatus === 'paid' ? '✓ Paid' : '⏳ Pending'}
                     </div>
+                    {order.itemTotal != null && (
+                      <div className="text-xs text-orange-600 mt-0.5">🏪 Vendor: ₹{order.itemTotal}</div>
+                    )}
+                    {order.deliveryFee != null && (
+                      <div className="text-xs text-purple-600 mt-0.5">🛵 Delivery: ₹{order.deliveryFee}</div>
+                    )}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
                     <select

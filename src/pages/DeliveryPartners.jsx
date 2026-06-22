@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Bike, Search, CheckCircle, XCircle, Clock, X, User } from 'lucide-react';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function DeliveryPartners() {
@@ -9,24 +9,20 @@ export default function DeliveryPartners() {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [selectedPartner, setSelectedPartner] = useState(null);
+  const [onlineTab, setOnlineTab] = useState('All');
 
-  // ✅ useCallback — useEffect dependency warning fix
-  const fetchPartners = useCallback(async () => {
-    setLoading(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'deliveryPartners'));
-      const data = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setPartners(data);
-    } catch (err) {
-      console.error('Error fetching delivery partners:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // ✅ Real-time onSnapshot listener
   useEffect(() => {
-    fetchPartners();
-  }, [fetchPartners]);
+    const unsubscribe = onSnapshot(collection(db, 'deliveryPartners'), (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPartners(data);
+      setLoading(false);
+    }, (err) => {
+      console.error('Error fetching delivery partners:', err);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const updateStatus = async (uid, newStatus) => {
     setUpdatingId(uid);
@@ -44,11 +40,17 @@ export default function DeliveryPartners() {
     }
   };
 
-  const filtered = partners.filter(p =>
-    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.phone || '').includes(searchTerm) ||
-    (p.area || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = partners.filter(p => {
+    const matchesSearch =
+      (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.phone || '').includes(searchTerm) ||
+      (p.area || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesOnline =
+      onlineTab === 'All' ||
+      (onlineTab === 'Online' && p.isOnline === true) ||
+      (onlineTab === 'Offline' && !p.isOnline);
+    return matchesSearch && matchesOnline;
+  });
 
   const getStatusBadge = (status) => {
     if (status === 'approved') return (
@@ -75,9 +77,7 @@ export default function DeliveryPartners() {
           <h1 className="text-2xl font-bold text-gray-900">Delivery Partners</h1>
           <p className="mt-1 text-sm text-gray-500">Click any row to view full details & documents.</p>
         </div>
-        <button onClick={fetchPartners} className="mt-3 sm:mt-0 bg-primary text-white px-4 py-2 rounded-lg font-medium text-sm hover:bg-orange-600 transition-colors">
-          🔄 Refresh
-        </button>
+        <span className="mt-3 sm:mt-0 text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">🟢 Live</span>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
@@ -93,6 +93,22 @@ export default function DeliveryPartners() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+      </div>
+
+      <div className="flex gap-2">
+        {['All', 'Online', 'Offline'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setOnlineTab(tab)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+              onlineTab === tab
+                ? 'bg-orange-500 text-white border-orange-500'
+                : 'bg-white text-gray-600 border-gray-300 hover:border-orange-400'
+            }`}
+          >
+            {tab === 'Online' ? '🟢 Online' : tab === 'Offline' ? '⚫ Offline' : 'All'}
+          </button>
+        ))}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -141,6 +157,10 @@ export default function DeliveryPartners() {
                         <div>
                           <div className="text-sm font-medium text-gray-900">{partner.name || '—'}</div>
                           <div className="text-xs text-gray-400">{partner.email || ''}</div>
+                          {partner.isOnline
+                            ? <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">🟢 Online</span>
+                            : <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">⚫ Offline</span>
+                          }
                         </div>
                       </div>
                     </td>

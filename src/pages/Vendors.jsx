@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Store, Search, X } from 'lucide-react';
 import { db } from '../firebase';
 
@@ -8,26 +8,22 @@ export default function Vendors() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('All');
+  const [dutyTab, setDutyTab] = useState('All');
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
 
-  // ✅ useCallback — hoisting fix
-  const fetchVendors = useCallback(async () => {
-    setLoading(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'vendors'));
-      const vendorsList = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setVendors(vendorsList);
-    } catch (error) {
-      console.error('Error fetching vendors:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // ✅ Real-time onSnapshot listener
   useEffect(() => {
-    fetchVendors();
-  }, [fetchVendors]);
+    const unsubscribe = onSnapshot(collection(db, 'vendors'), (snapshot) => {
+      const vendorsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setVendors(vendorsList);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching vendors:', error);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleUpdateStatus = async (vendorId, newStatus) => {
     setUpdatingId(vendorId);
@@ -35,7 +31,7 @@ export default function Vendors() {
       await updateDoc(doc(db, 'vendors', vendorId), { status: newStatus });
       try {
         await updateDoc(doc(db, 'partnerProfiles', vendorId), { status: newStatus });
-      } catch (_) {
+      } catch {
         // partnerProfiles may not exist for all vendors
       }
       setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, status: newStatus } : v));
@@ -65,7 +61,11 @@ export default function Vendors() {
       (vendor.phone && vendor.phone.includes(searchLower));
     const vendorStatus = vendor.status || 'pending';
     const matchesTab = activeTab === 'All' || vendorStatus === activeTab;
-    return matchesSearch && matchesTab;
+    const matchesDuty =
+      dutyTab === 'All' ||
+      (dutyTab === 'On Duty' && vendor.isOnDuty === true) ||
+      (dutyTab === 'Off Duty' && !vendor.isOnDuty);
+    return matchesSearch && matchesTab && matchesDuty;
   });
 
   const getStatusBadge = (status) => {
@@ -82,9 +82,7 @@ export default function Vendors() {
           <h1 className="text-2xl font-bold text-gray-900">Vendors / Stalls</h1>
           <p className="mt-1 text-sm text-gray-500">Click any row to view full details & documents.</p>
         </div>
-        <button onClick={fetchVendors} className="mt-3 sm:mt-0 bg-primary text-white px-4 py-2 rounded-lg font-medium text-sm hover:bg-orange-600 transition-colors">
-          🔄 Refresh
-        </button>
+        <span className="mt-3 sm:mt-0 text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">🟢 Live</span>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
@@ -116,6 +114,22 @@ export default function Vendors() {
             </button>
           ))}
         </nav>
+      </div>
+
+      <div className="flex gap-2">
+        {['All', 'On Duty', 'Off Duty'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setDutyTab(tab)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+              dutyTab === tab
+                ? 'bg-orange-500 text-white border-orange-500'
+                : 'bg-white text-gray-600 border-gray-300 hover:border-orange-400'
+            }`}
+          >
+            {tab === 'On Duty' ? '🟢 On Duty' : tab === 'Off Duty' ? '🔴 Off Duty' : 'All'}
+          </button>
+        ))}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -162,12 +176,18 @@ export default function Vendors() {
                       <div className="text-xs text-gray-500">Age: {vendor.age || '-'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => handleToggleDuty(vendor.id, vendor.isOnDuty)}
-                        className={`relative inline-flex flex-shrink-0 h-5 w-10 border-2 border-transparent rounded-full cursor-pointer transition-colors duration-200 ${vendor.isOnDuty ? 'bg-primary' : 'bg-gray-200'}`}
-                      >
-                        <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ${vendor.isOnDuty ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleDuty(vendor.id, vendor.isOnDuty)}
+                          className={`relative inline-flex flex-shrink-0 h-5 w-10 border-2 border-transparent rounded-full cursor-pointer transition-colors duration-200 ${vendor.isOnDuty ? 'bg-primary' : 'bg-gray-200'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ${vendor.isOnDuty ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                        {vendor.isOnDuty
+                          ? <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">🟢 On Duty</span>
+                          : <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">🔴 Off Duty</span>
+                        }
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(vendor.status)}</td>
                     <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
