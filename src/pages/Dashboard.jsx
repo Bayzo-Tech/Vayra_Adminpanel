@@ -250,6 +250,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    const unsubscribesSnapshot = unsubscribesRef.current;
     let usersLoaded = false;
     let vendorsLoaded = false;
     let partnersLoaded = false;
@@ -374,7 +375,6 @@ export default function Dashboard() {
       unsubTomorrowSettlement();
       if (activeUnsubscribeRecent) activeUnsubscribeRecent();
 
-      const unsubscribesSnapshot = unsubscribesRef.current;
       Object.values(unsubscribesSnapshot).forEach((unsub) => {
         if (unsub) unsub();
       });
