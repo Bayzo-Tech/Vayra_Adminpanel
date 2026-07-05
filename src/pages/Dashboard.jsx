@@ -8,7 +8,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
-  // States for non-filterable items
   const [nonFilterableStats, setNonFilterableStats] = useState({
     users: 0,
     vendors: 0,
@@ -16,7 +15,6 @@ export default function Dashboard() {
     activePartners: 0,
   });
 
-  // States for the 6 filterable cards
   const [cardStates, setCardStates] = useState({
     totalRevenue: { filter: 'all-time', customStart: null, customEnd: null, value: 0, noOrders: false, dateLabel: '', loading: true },
     todayRevenue: { filter: 'today', customStart: null, customEnd: null, value: 0, noOrders: false, dateLabel: '', loading: true },
@@ -26,7 +24,6 @@ export default function Dashboard() {
     todayOrders: { filter: 'today', customStart: null, customEnd: null, value: 0, noOrders: false, dateLabel: '', loading: true },
   });
 
-  // Settlement stats (Today's & Tomorrow's settlement based on Razorpay T+2 cycle)
   const [settlementStats, setSettlementStats] = useState({
     today: { value: 0, loading: true },
     tomorrow: { value: 0, loading: true },
@@ -35,13 +32,11 @@ export default function Dashboard() {
   const [recentOrders, setRecentOrders] = useState([]);
   const [copiedOrderId, setCopiedOrderId] = useState(null);
 
-  // Modal control states
   const [activeFilterCard, setActiveFilterCard] = useState(null);
   const [tempFilterType, setTempFilterType] = useState('all-time');
   const [tempCustomStart, setTempCustomStart] = useState('');
   const [tempCustomEnd, setTempCustomEnd] = useState('');
 
-  // Keep track of active unsubscribe functions for the 6 cards
   const unsubscribesRef = useRef({
     totalRevenue: null,
     todayRevenue: null,
@@ -50,6 +45,12 @@ export default function Dashboard() {
     totalOrders: null,
     todayOrders: null,
   });
+
+  // ✅ NEW: Bank holiday check — Razorpay doesn't settle on Saturday (6) or Sunday (0)
+  const isBankHoliday = (date) => {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  };
 
   const parseLocalDate = (dateString, isEnd = false) => {
     if (!dateString) return new Date();
@@ -248,9 +249,7 @@ export default function Dashboard() {
     });
   };
 
-  // Mount/Unmount logic
   useEffect(() => {
-    const unsubscribesSnapshot = unsubscribesRef.current;
     let usersLoaded = false;
     let vendorsLoaded = false;
     let partnersLoaded = false;
@@ -375,13 +374,12 @@ export default function Dashboard() {
       unsubTomorrowSettlement();
       if (activeUnsubscribeRecent) activeUnsubscribeRecent();
 
-      // Snapshot the ref's current value into a local before iterating,
-      // since unsubscribesRef.current can be reassigned by the time this cleanup runs.
+      const unsubscribesSnapshot = unsubscribesRef.current;
       Object.values(unsubscribesSnapshot).forEach((unsub) => {
         if (unsub) unsub();
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- startCardListener/startSettlementListener are intentionally omitted: this is one-time mount setup, adding them as deps would cause an infinite resubscribe loop since both functions are recreated every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startCardListener/startSettlementListener intentionally omitted: one-time mount setup, adding them would cause an infinite resubscribe loop
   }, []);
 
   const formatCardValue = (key, val) => {
@@ -584,6 +582,12 @@ export default function Dashboard() {
     );
   }
 
+  // ✅ NEW: Precompute whether today/tomorrow fall on a bank holiday (Sat/Sun)
+  const todayIsHoliday = isBankHoliday(new Date());
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowIsHoliday = isBankHoliday(tomorrowDate);
+
   return (
     <div className="space-y-6">
       <div>
@@ -629,17 +633,35 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <p className="text-xs font-medium text-gray-500">Today's Settlement</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">
-            {settlementStats.today.loading ? '...' : `₹${settlementStats.today.value.toLocaleString('en-IN')}`}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-1">Orders from 2 days ago (T+2 cycle)</p>
+          {todayIsHoliday ? (
+            <>
+              <p className="text-2xl font-bold text-gray-900 mt-1">₹0</p>
+              <p className="text-[11px] text-orange-600 font-semibold mt-1">No settlement today (bank holiday)</p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {settlementStats.today.loading ? '...' : `₹${settlementStats.today.value.toLocaleString('en-IN')}`}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1">Orders from 2 days ago (T+2 cycle)</p>
+            </>
+          )}
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <p className="text-xs font-medium text-gray-500">Tomorrow's Settlement</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">
-            {settlementStats.tomorrow.loading ? '...' : `₹${settlementStats.tomorrow.value.toLocaleString('en-IN')}`}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-1">Orders from yesterday · Final amount may vary</p>
+          {tomorrowIsHoliday ? (
+            <>
+              <p className="text-2xl font-bold text-gray-900 mt-1">₹0</p>
+              <p className="text-[11px] text-orange-600 font-semibold mt-1">No settlement tomorrow (bank holiday)</p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {settlementStats.tomorrow.loading ? '...' : `₹${settlementStats.tomorrow.value.toLocaleString('en-IN')}`}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1">Orders from yesterday · Final amount may vary</p>
+            </>
+          )}
         </div>
       </div>
 
