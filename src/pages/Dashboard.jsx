@@ -217,6 +217,7 @@ export default function Dashboard() {
 
   // Mount/Unmount logic
   useEffect(() => {
+    const unsubscribes = unsubscribesRef.current;
     let usersLoaded = false;
     let vendorsLoaded = false;
     let partnersLoaded = false;
@@ -282,6 +283,7 @@ export default function Dashboard() {
       }
     };
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- startCardListener synchronously sets initial loading state before subscribing to the real-time listener; required for mount-time listener setup
     startCardListener('totalRevenue', 'all-time', null, null, () => handleCardFirstLoad('totalRevenue'));
     startCardListener('todayRevenue', 'today', null, null, () => handleCardFirstLoad('todayRevenue'));
     startCardListener('foodRevenue', 'all-time', null, null, () => handleCardFirstLoad('foodRevenue'));
@@ -340,10 +342,11 @@ export default function Dashboard() {
       unsubscribeVendors();
       unsubscribePartners();
       if (activeUnsubscribeRecent) activeUnsubscribeRecent();
-      Object.values(unsubscribesRef.current).forEach((unsub) => {
+      Object.values(unsubscribes).forEach((unsub) => {
         if (unsub) unsub();
       });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startCardListener is intentionally omitted; adding it as a dependency would cause the effect to re-run and re-subscribe listeners on every render
   }, []);
 
   // Format Helper for Card values

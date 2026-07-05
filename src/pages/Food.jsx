@@ -43,8 +43,6 @@ export default function Food() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
 
-  useEffect(() => { fetchData(); }, []);
-
   const fetchData = async () => {
     try {
       const beachSnap = await getDocs(collection(db, 'beaches'));
@@ -85,6 +83,11 @@ export default function Food() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch; state updates happen after the awaited firestore calls, not synchronously
+    fetchData();
+  }, []);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -237,7 +240,16 @@ export default function Food() {
     (currentPage - 1) * itemsPerPage, currentPage * itemsPerPage
   );
 
-  useEffect(() => { setCurrentPage(1); }, [activeArea, activeCategory, searchTerm]);
+  // Reset pagination when filters change (adjusting state during render, per React's guidance for derived state)
+  const [prevFilters, setPrevFilters] = useState({ activeArea, activeCategory, searchTerm });
+  if (
+    prevFilters.activeArea !== activeArea ||
+    prevFilters.activeCategory !== activeCategory ||
+    prevFilters.searchTerm !== searchTerm
+  ) {
+    setPrevFilters({ activeArea, activeCategory, searchTerm });
+    setCurrentPage(1);
+  }
 
   return (
     <div className="space-y-6">

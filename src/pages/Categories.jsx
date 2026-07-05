@@ -52,11 +52,17 @@ export default function Categories() {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
-
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch; state updates happen after the awaited firestore calls, not synchronously
+    fetchData();
+  }, []);
+
+  // Reset pagination when the area filter changes (adjusting state during render, per React's guidance for derived state)
+  const [prevActiveArea, setPrevActiveArea] = useState(activeArea);
+  if (activeArea !== prevActiveArea) {
+    setPrevActiveArea(activeArea);
     setCurrentPage(1);
-  }, [activeArea]);
+  }
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];

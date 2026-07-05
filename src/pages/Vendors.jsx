@@ -12,7 +12,6 @@ export default function Vendors() {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
 
-  // ✅ Real-time onSnapshot listener
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'vendors'), (snapshot) => {
       const vendorsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -258,6 +257,8 @@ export default function Vendors() {
                     { label: '📋 FSSAI Certificate', img: selectedVendor.fssaiImage },
                     { label: '🪪 Aadhaar Card', img: selectedVendor.aadhaarImage },
                     { label: '🪪 PAN Card', img: selectedVendor.panImage },
+                    { label: '🤳 Selfie', img: selectedVendor.selfie },
+                    { label: '🏪 Selfie at Stall', img: selectedVendor.selfieFrontStall },
                   ].map(({ label, img }) => (
                     <div key={label} className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">{label}</div>

@@ -23,10 +23,6 @@ export default function Coupons() {
     status: 'Active'
   });
 
-  useEffect(() => {
-    fetchCoupons();
-  }, []);
-
   const fetchCoupons = async () => {
     try {
       const col = collection(db, 'coupons');
@@ -39,6 +35,11 @@ export default function Coupons() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch; state updates happen after the awaited firestore call, not synchronously
+    fetchCoupons();
+  }, []);
 
   const handleAddCoupon = async (e) => {
     e.preventDefault();

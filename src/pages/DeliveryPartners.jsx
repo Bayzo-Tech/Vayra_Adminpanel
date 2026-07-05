@@ -11,7 +11,6 @@ export default function DeliveryPartners() {
   const [selectedPartner, setSelectedPartner] = useState(null);
   const [onlineTab, setOnlineTab] = useState('All');
 
-  // ✅ Real-time onSnapshot listener
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'deliveryPartners'), (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -235,8 +234,8 @@ export default function DeliveryPartners() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
                     { label: '🪪 Aadhaar Card', img: selectedPartner.aadhaar },
-                    { label: '🪪 PAN Card', img: selectedPartner.pan },
-                    { label: '🚗 Driving License', img: selectedPartner.license },
+                    { label: '🚗 Driving License', img: selectedPartner.drivingLicense },
+                    { label: '🤳 Selfie', img: selectedPartner.selfie },
                   ].map(({ label, img }) => (
                     <div key={label} className="border border-gray-200 rounded-xl overflow-hidden">
                       <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">{label}</div>
