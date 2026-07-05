@@ -26,6 +26,12 @@ export default function Dashboard() {
     todayOrders: { filter: 'today', customStart: null, customEnd: null, value: 0, noOrders: false, dateLabel: '', loading: true },
   });
 
+  // Settlement stats (Today's & Tomorrow's settlement based on Razorpay T+2 cycle)
+  const [settlementStats, setSettlementStats] = useState({
+    today: { value: 0, loading: true },
+    tomorrow: { value: 0, loading: true },
+  });
+
   const [recentOrders, setRecentOrders] = useState([]);
   const [copiedOrderId, setCopiedOrderId] = useState(null);
 
@@ -45,7 +51,6 @@ export default function Dashboard() {
     todayOrders: null,
   });
 
-  // Timezone-safe date string parser (returns Date object at start of local day or end of local day)
   const parseLocalDate = (dateString, isEnd = false) => {
     if (!dateString) return new Date();
     const [year, month, day] = dateString.split('-').map(Number);
@@ -55,7 +60,6 @@ export default function Dashboard() {
     return new Date(year, month - 1, day, 0, 0, 0, 0);
   };
 
-  // Date range calculator returning Firebase timestamps and JS Date objects
   const getDateRange = (filterType, customStart = null, customEnd = null) => {
     const now = new Date();
     const todayStart = new Date(now);
@@ -87,8 +91,7 @@ export default function Dashboard() {
         end = todayEnd;
         break;
       case 'all-time':
-        // Business started May 31, 2026
-        start = new Date(2026, 4, 31, 0, 0, 0); // May is 4 in JS
+        start = new Date(2026, 4, 31, 0, 0, 0);
         end = todayEnd;
         break;
       case 'custom':
@@ -108,7 +111,17 @@ export default function Dashboard() {
     };
   };
 
-  // Helper to format date label (e.g. "Jun 1 – Jun 8")
+  const getDayRange = (daysAgo) => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - daysAgo);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setDate(end.getDate() - daysAgo);
+    end.setHours(23, 59, 59, 999);
+    return { startTimestamp: Timestamp.fromDate(start), endTimestamp: Timestamp.fromDate(end) };
+  };
+
   const formatDateLabel = (startJS, endJS) => {
     const formatSingle = (date) => {
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -119,9 +132,7 @@ export default function Dashboard() {
     return `${formatSingle(startJS)} – ${formatSingle(endJS)}`;
   };
 
-  // Function to subscribe/resubscribe a card to its real-time query
   const startCardListener = (cardKey, filterType, customStart, customEnd, onFirstLoad = null) => {
-    // Unsubscribe previous listener for this card if it exists
     if (unsubscribesRef.current[cardKey]) {
       unsubscribesRef.current[cardKey]();
     }
@@ -154,7 +165,6 @@ export default function Dashboard() {
       snap.docs.forEach((doc) => {
         const data = doc.data();
 
-        // Exclude cancelled/failed orders and only count paid orders
         const status = (data.orderStatus || data.status || '').toLowerCase();
         const paymentStatus = (data.paymentStatus || '').toLowerCase();
         if (status === 'cancelled' || status === 'failed' || paymentStatus !== 'paid') {
@@ -215,9 +225,32 @@ export default function Dashboard() {
     unsubscribesRef.current[cardKey] = unsubscribe;
   };
 
+  const startSettlementListener = (key, daysAgo) => {
+    const { startTimestamp, endTimestamp } = getDayRange(daysAgo);
+    const q = query(
+      collection(db, 'orders'),
+      where('createdAt', '>=', startTimestamp),
+      where('createdAt', '<=', endTimestamp)
+    );
+    return onSnapshot(q, (snap) => {
+      let total = 0;
+      snap.docs.forEach((doc) => {
+        const data = doc.data();
+        const status = (data.orderStatus || data.status || '').toLowerCase();
+        const paymentStatus = (data.paymentStatus || '').toLowerCase();
+        if (status === 'cancelled' || status === 'failed' || paymentStatus !== 'paid') return;
+        total += Number(data.totalAmount) || Number(data.total) || 0;
+      });
+      setSettlementStats(prev => ({ ...prev, [key]: { value: total, loading: false } }));
+    }, (err) => {
+      console.error(`Settlement listener error (${key}):`, err);
+      setSettlementStats(prev => ({ ...prev, [key]: { value: 0, loading: false } }));
+    });
+  };
+
   // Mount/Unmount logic
   useEffect(() => {
-    const unsubscribes = unsubscribesRef.current;
+    const unsubscribesSnapshot = unsubscribesRef.current;
     let usersLoaded = false;
     let vendorsLoaded = false;
     let partnersLoaded = false;
@@ -239,7 +272,6 @@ export default function Dashboard() {
       }
     };
 
-    // 1. Users Listener
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snap) => {
       setNonFilterableStats(prev => ({ ...prev, users: snap.size }));
       usersLoaded = true;
@@ -250,7 +282,6 @@ export default function Dashboard() {
       checkLoading();
     });
 
-    // 2. Vendors Listener
     const unsubscribeVendors = onSnapshot(collection(db, 'vendors'), (snap) => {
       setNonFilterableStats(prev => ({ ...prev, vendors: snap.size }));
       vendorsLoaded = true;
@@ -261,7 +292,6 @@ export default function Dashboard() {
       checkLoading();
     });
 
-    // 3. Delivery Partners Listener
     const unsubscribePartners = onSnapshot(collection(db, 'deliveryPartners'), (snap) => {
       const totalPartners = snap.size;
       const activePartners = snap.docs.filter(d => d.data().status === 'approved').length;
@@ -274,7 +304,6 @@ export default function Dashboard() {
       checkLoading();
     });
 
-    // 4. Initial Card Listeners setup
     const handleCardFirstLoad = (cardKey) => {
       loadedCards[cardKey] = true;
       if (Object.values(loadedCards).every(Boolean)) {
@@ -283,7 +312,7 @@ export default function Dashboard() {
       }
     };
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- startCardListener synchronously sets initial loading state before subscribing to the real-time listener; required for mount-time listener setup
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- imperative one-time kickoff of real-time listeners on mount, not derived state
     startCardListener('totalRevenue', 'all-time', null, null, () => handleCardFirstLoad('totalRevenue'));
     startCardListener('todayRevenue', 'today', null, null, () => handleCardFirstLoad('todayRevenue'));
     startCardListener('foodRevenue', 'all-time', null, null, () => handleCardFirstLoad('foodRevenue'));
@@ -291,8 +320,10 @@ export default function Dashboard() {
     startCardListener('totalOrders', 'all-time', null, null, () => handleCardFirstLoad('totalOrders'));
     startCardListener('todayOrders', 'today', null, null, () => handleCardFirstLoad('todayOrders'));
 
-    // 5. Recent Orders Listener (createdAt >= May 31, 2026)
-    const startOfBusiness = new Date(2026, 4, 31, 0, 0, 0); // May 31 (month index 4)
+    const unsubTodaySettlement = startSettlementListener('today', 2);
+    const unsubTomorrowSettlement = startSettlementListener('tomorrow', 1);
+
+    const startOfBusiness = new Date(2026, 4, 31, 0, 0, 0);
     const qRecent = query(
       collection(db, 'orders'),
       where('createdAt', '>=', Timestamp.fromDate(startOfBusiness)),
@@ -336,20 +367,23 @@ export default function Dashboard() {
 
     activeUnsubscribeRecent = unsubscribeRecent;
 
-    // Cleanup all listeners on unmount
     return () => {
       unsubscribeUsers();
       unsubscribeVendors();
       unsubscribePartners();
+      unsubTodaySettlement();
+      unsubTomorrowSettlement();
       if (activeUnsubscribeRecent) activeUnsubscribeRecent();
-      Object.values(unsubscribes).forEach((unsub) => {
+
+      // Snapshot the ref's current value into a local before iterating,
+      // since unsubscribesRef.current can be reassigned by the time this cleanup runs.
+      Object.values(unsubscribesSnapshot).forEach((unsub) => {
         if (unsub) unsub();
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- startCardListener is intentionally omitted; adding it as a dependency would cause the effect to re-run and re-subscribe listeners on every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startCardListener/startSettlementListener are intentionally omitted: this is one-time mount setup, adding them as deps would cause an infinite resubscribe loop since both functions are recreated every render
   }, []);
 
-  // Format Helper for Card values
   const formatCardValue = (key, val) => {
     if (key === 'totalOrders' || key === 'todayOrders') {
       return val;
@@ -357,13 +391,11 @@ export default function Dashboard() {
     return `₹${val.toLocaleString('en-IN')}`;
   };
 
-  // Helper to get short order ID
   const getShortOrderId = (id) => {
     if (!id) return 'N/A';
     return id.length > 8 ? id.substring(0, 8) + '...' : id;
   };
 
-  // Helper to format order Date & Time: "Jun 7, 2026 7:47 PM"
   const formatDateTime = (createdAt) => {
     let d = null;
     if (createdAt && typeof createdAt.toDate === 'function') {
@@ -387,7 +419,6 @@ export default function Dashboard() {
     });
   };
 
-  // Helper to format Food Items: "item name x quantity (stallName)"
   const formatFoodItems = (order) => {
     if (Array.isArray(order.items) && order.items.length > 0) {
       return order.items.map(item => {
@@ -400,7 +431,6 @@ export default function Dashboard() {
     return order.itemsSummary || '—';
   };
 
-  // Copy to clipboard handler
   const copyToClipboard = (text, e) => {
     e.stopPropagation();
     if (!text) return;
@@ -412,7 +442,6 @@ export default function Dashboard() {
     });
   };
 
-  // Card click handler: open modal for filterable ones, navigate for others
   const handleCardClick = (item) => {
     if (item.isFilterable) {
       setActiveFilterCard(item.key);
@@ -424,7 +453,6 @@ export default function Dashboard() {
     }
   };
 
-  // Modal apply filter
   const applyFilter = (filterType, start = null, end = null) => {
     if (filterType === 'custom') {
       if (!start || !end) {
@@ -436,7 +464,6 @@ export default function Dashboard() {
     setActiveFilterCard(null);
   };
 
-  // Definition of the 10 stat cards
   const statCards = [
     {
       key: 'users',
@@ -564,7 +591,6 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-gray-500">Overview of VAYRA platform performance.</p>
       </div>
 
-      {/* 10 stat cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {statCards.map((item) => (
           <div
@@ -599,7 +625,24 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent Orders Table */}
+      {/* Settlement Overview */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <p className="text-xs font-medium text-gray-500">Today's Settlement</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">
+            {settlementStats.today.loading ? '...' : `₹${settlementStats.today.value.toLocaleString('en-IN')}`}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1">Orders from 2 days ago (T+2 cycle)</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <p className="text-xs font-medium text-gray-500">Tomorrow's Settlement</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">
+            {settlementStats.tomorrow.loading ? '...' : `₹${settlementStats.tomorrow.value.toLocaleString('en-IN')}`}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1">Orders from yesterday · Final amount may vary</p>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
@@ -644,7 +687,6 @@ export default function Dashboard() {
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => navigate('/orders')}
                     >
-                      {/* Order ID (short, copyable) */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div
                           onClick={(e) => copyToClipboard(fullId, e)}
@@ -661,36 +703,28 @@ export default function Dashboard() {
                           )}
                         </div>
                       </td>
-                      {/* Payment ID */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                         {payId}
                       </td>
-                      {/* Date & Time */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDateTime(order.createdAt || order.date)}
                       </td>
-                      {/* Customer */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="font-semibold text-gray-800">{customerName}</div>
                         <div className="text-xs text-gray-500">{customerPhone}</div>
                       </td>
-                      {/* Food Items */}
                       <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title={formatFoodItems(order)}>
                         {formatFoodItems(order)}
                       </td>
-                      {/* Total Amount */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                         ₹{totalAmt.toLocaleString('en-IN')}
                       </td>
-                      {/* Delivery Fee */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         ₹{delFee.toLocaleString('en-IN')}
                       </td>
-                      {/* Payment Method */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 uppercase font-medium">
                         {payMethod}
                       </td>
-                      {/* Status */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2.5 py-1 inline-flex text-xs font-semibold rounded-full capitalize ${orderStatus === 'delivered' ? 'bg-green-50 text-green-700 border border-green-200' :
                           orderStatus === 'cancelled' ? 'bg-red-50 text-red-700 border border-red-200' :
@@ -714,11 +748,9 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Date Filter Dialog Modal */}
       {activeFilterCard && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden border border-gray-100 transform transition-all scale-100">
-            {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-base font-bold text-gray-950">
                 Filter {statCards.find(c => c.key === activeFilterCard)?.name}
@@ -731,9 +763,7 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Body */}
             <div className="p-6 space-y-4">
-              {/* Predefined ranges */}
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { label: 'Today', value: 'today' },
@@ -804,7 +834,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Footer */}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
               <button
                 onClick={() => setActiveFilterCard(null)}
