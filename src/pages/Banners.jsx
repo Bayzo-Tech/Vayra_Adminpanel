@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, Pencil, X } from 'lucide-react';
+import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, Pencil, X, Check } from 'lucide-react';
 import { db } from '../firebase';
 
 const CLOUD_NAME = "dvkjhuzdr";
@@ -40,12 +40,9 @@ export default function Banners() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
 
-  // ✅ NEW: dropdown selector state — area picks the pool, category dropdown picks which
-  // whole category to add, food-category dropdown + food dropdown picks individual foods
+  // ✅ NEW: dropdown selector state
   const [areaFilter, setAreaFilter] = useState('');
-  const [categoryDropdownValue, setCategoryDropdownValue] = useState('');
-  const [foodCategoryValue, setFoodCategoryValue] = useState('');
-  const [foodDropdownValue, setFoodDropdownValue] = useState('');
+  const [browseCategoryId, setBrowseCategoryId] = useState(''); // which category's foods are shown below the dropdown
 
   const fetchData = useCallback(async () => {
     try {
@@ -85,8 +82,6 @@ export default function Banners() {
 
     setLoading(false);
   }, []);
-
-  
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch inside effect; setState after await is safe here
     fetchData();
@@ -100,63 +95,50 @@ export default function Banners() {
     }
   };
 
-  // ✅ Categories filtered by selected area
+  // Categories filtered by selected area
   const filteredCategories = categories.filter(cat => {
     if (!areaFilter) return true;
     if (!cat.area) return true;
     return cat.area === areaFilter || cat.area === 'Both';
   });
 
-  // ✅ NEW: add the picked category (whole category) to the selection — clears any
-  // individually-selected foods from that category since it's now fully covered
-  const handleAddCategory = () => {
-    if (!categoryDropdownValue) return;
-    if (formData.categoryIds.includes(categoryDropdownValue)) {
-      setCategoryDropdownValue('');
-      return;
-    }
-    const catFoodIds = foods.filter(f => f.categoryId === categoryDropdownValue).map(f => f.id);
-    setFormData(prev => ({
-      ...prev,
-      categoryIds: [...prev.categoryIds, categoryDropdownValue],
-      foodIds: prev.foodIds.filter(fid => !catFoodIds.includes(fid)),
-    }));
-    setCategoryDropdownValue('');
+  const browseCategoryFoods = browseCategoryId ? foods.filter(f => f.categoryId === browseCategoryId) : [];
+  const browseCategorySelected = browseCategoryId ? formData.categoryIds.includes(browseCategoryId) : false;
+
+  // ✅ Toggle whole category — adding it clears any individually-selected foods from it
+  const toggleWholeCategory = (catId) => {
+    setFormData(prev => {
+      const exists = prev.categoryIds.includes(catId);
+      const catFoodIds = foods.filter(f => f.categoryId === catId).map(f => f.id);
+      return {
+        ...prev,
+        categoryIds: exists
+          ? prev.categoryIds.filter(id => id !== catId)
+          : [...prev.categoryIds, catId],
+        foodIds: prev.foodIds.filter(fid => !catFoodIds.includes(fid)),
+      };
+    });
+  };
+
+  // ✅ Toggle a single food within the browsed category
+  const toggleFood = (foodId) => {
+    setFormData(prev => {
+      const exists = prev.foodIds.includes(foodId);
+      return {
+        ...prev,
+        foodIds: exists
+          ? prev.foodIds.filter(id => id !== foodId)
+          : [...prev.foodIds, foodId],
+      };
+    });
   };
 
   const handleRemoveCategory = (catId) => {
-    setFormData(prev => ({
-      ...prev,
-      categoryIds: prev.categoryIds.filter(id => id !== catId),
-    }));
-  };
-
-  // ✅ NEW: foods available in the food dropdown — from the chosen "browse category",
-  // filtered to exclude foods already covered by a whole-category selection
-  const foodsForDropdown = foods.filter(f => {
-    if (f.categoryId !== foodCategoryValue) return false;
-    if (formData.categoryIds.includes(f.categoryId)) return false; // already covered by whole category
-    return true;
-  });
-
-  const handleAddFood = () => {
-    if (!foodDropdownValue) return;
-    if (formData.foodIds.includes(foodDropdownValue)) {
-      setFoodDropdownValue('');
-      return;
-    }
-    setFormData(prev => ({
-      ...prev,
-      foodIds: [...prev.foodIds, foodDropdownValue],
-    }));
-    setFoodDropdownValue('');
+    setFormData(prev => ({ ...prev, categoryIds: prev.categoryIds.filter(id => id !== catId) }));
   };
 
   const handleRemoveFood = (foodId) => {
-    setFormData(prev => ({
-      ...prev,
-      foodIds: prev.foodIds.filter(id => id !== foodId),
-    }));
+    setFormData(prev => ({ ...prev, foodIds: prev.foodIds.filter(id => id !== foodId) }));
   };
 
   const handleAddBanner = async (e) => {
@@ -224,9 +206,7 @@ export default function Banners() {
     setImagePreview(banner.imageUrl || '');
     setImageFile(null);
     setAreaFilter('');
-    setCategoryDropdownValue('');
-    setFoodCategoryValue('');
-    setFoodDropdownValue('');
+    setBrowseCategoryId('');
     setIsModalOpen(true);
   };
 
@@ -237,9 +217,7 @@ export default function Banners() {
     setImagePreview('');
     setImageFile(null);
     setAreaFilter('');
-    setCategoryDropdownValue('');
-    setFoodCategoryValue('');
-    setFoodDropdownValue('');
+    setBrowseCategoryId('');
   };
 
   const getCategoryName = (id) => categories.find(c => c.id === id)?.name || 'Unknown';
@@ -361,7 +339,7 @@ export default function Banners() {
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
               </div>
 
-              {/* ✅ Area dropdown */}
+              {/* Area dropdown */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Area *</label>
                 <select
@@ -369,9 +347,7 @@ export default function Banners() {
                   value={areaFilter}
                   onChange={(e) => {
                     setAreaFilter(e.target.value);
-                    setCategoryDropdownValue('');
-                    setFoodCategoryValue('');
-                    setFoodDropdownValue('');
+                    setBrowseCategoryId('');
                   }}
                 >
                   <option value="">Select an area</option>
@@ -379,103 +355,89 @@ export default function Banners() {
                 </select>
               </div>
 
-              {/* ✅ Category dropdown + Add button */}
+              {/* ✅ Category dropdown — selecting it shows the whole-category checkbox + food checklist right below */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Add Whole Category <span className="text-xs text-gray-400 font-normal">(all foods inside included automatically)</span>
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                    value={categoryDropdownValue}
-                    onChange={(e) => setCategoryDropdownValue(e.target.value)}
-                    disabled={!areaFilter}
-                  >
-                    <option value="">{areaFilter ? 'Select a category' : 'Select an area first'}</option>
-                    {filteredCategories.map(cat => (
-                      <option key={cat.id} value={cat.id} disabled={formData.categoryIds.includes(cat.id)}>
-                        {cat.name}{formData.categoryIds.includes(cat.id) ? ' (added)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleAddCategory}
-                    disabled={!categoryDropdownValue}
-                    className="px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-40 flex-shrink-0"
-                  >
-                    Add
-                  </button>
-                </div>
-                {/* Selected category chips */}
-                {formData.categoryIds.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Browse Category</label>
+                <select
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  value={browseCategoryId}
+                  onChange={(e) => setBrowseCategoryId(e.target.value)}
+                  disabled={!areaFilter}
+                >
+                  <option value="">{areaFilter ? 'Select a category' : 'Select an area first'}</option>
+                  {filteredCategories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+
+                {/* ✅ Foods of the browsed category — appear right here as checkboxes */}
+                {browseCategoryId && (
+                  <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
+                    <label className={`flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 cursor-pointer transition-colors ${
+                      browseCategorySelected ? 'bg-orange-50' : 'bg-gray-50 hover:bg-gray-100'
+                    }`}>
+                      <span
+                        onClick={(e) => { e.preventDefault(); toggleWholeCategory(browseCategoryId); }}
+                        className={`w-4 h-4 rounded flex items-center justify-center border-2 flex-shrink-0 ${
+                          browseCategorySelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300 bg-white'
+                        }`}
+                      >
+                        {browseCategorySelected && <Check className="w-3 h-3 text-white" />}
+                      </span>
+                      <span className="text-sm font-semibold text-gray-700">
+                        Select entire "{getCategoryName(browseCategoryId)}" category ({browseCategoryFoods.length} items)
+                      </span>
+                    </label>
+
+                    <div className="max-h-52 overflow-y-auto p-2">
+                      {browseCategoryFoods.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-2 px-1">No food items in this category yet.</p>
+                      ) : (
+                        browseCategoryFoods.map(food => {
+                          const foodSelected = browseCategorySelected || formData.foodIds.includes(food.id);
+                          return (
+                            <button
+                              type="button"
+                              key={food.id}
+                              onClick={() => !browseCategorySelected && toggleFood(food.id)}
+                              disabled={browseCategorySelected}
+                              className={`w-full flex items-center justify-between text-sm py-2 px-2 rounded-lg ${
+                                browseCategorySelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border-2 flex-shrink-0 ${
+                                  foodSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
+                                }`}>
+                                  {foodSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                                </span>
+                                <span className="text-gray-600">🍽️ {food.name}</span>
+                              </span>
+                              <span className="text-gray-400 text-xs">₹{food.price}</span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ✅ Separate summary box — shows everything selected so far (categories + foods) */}
+              {(formData.categoryIds.length > 0 || formData.foodIds.length > 0) && (
+                <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+                  <p className="text-xs font-semibold text-gray-500 mb-2">Selected for this banner</p>
+                  <div className="flex flex-wrap gap-2">
                     {formData.categoryIds.map(catId => (
-                      <span key={catId} className="flex items-center gap-1.5 bg-orange-50 text-orange-700 text-xs font-medium px-2.5 py-1 rounded-full border border-orange-200">
-                        📂 {getCategoryName(catId)}
+                      <span key={catId} className="flex items-center gap-1.5 bg-orange-100 text-orange-700 text-xs font-medium px-2.5 py-1 rounded-full">
+                        📂 {getCategoryName(catId)} (whole)
                         <button type="button" onClick={() => handleRemoveCategory(catId)} className="hover:text-orange-900">
                           <X className="w-3 h-3" />
                         </button>
                       </span>
                     ))}
-                  </div>
-                )}
-              </div>
-
-              {/* ✅ Food dropdown (browse by category) + Add button */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Add Individual Food Items <span className="text-xs text-gray-400 font-normal">(pick specific dishes without adding the whole category)</span>
-                </label>
-                <div className="flex gap-2 mb-2">
-                  <select
-                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                    value={foodCategoryValue}
-                    onChange={(e) => { setFoodCategoryValue(e.target.value); setFoodDropdownValue(''); }}
-                    disabled={!areaFilter}
-                  >
-                    <option value="">{areaFilter ? 'Browse category' : 'Select an area first'}</option>
-                    {filteredCategories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                    value={foodDropdownValue}
-                    onChange={(e) => setFoodDropdownValue(e.target.value)}
-                    disabled={!foodCategoryValue}
-                  >
-                    <option value="">
-                      {!foodCategoryValue
-                        ? 'Select a category above first'
-                        : formData.categoryIds.includes(foodCategoryValue)
-                          ? 'Whole category already added'
-                          : foodsForDropdown.length === 0
-                            ? 'No foods available'
-                            : 'Select a food item'}
-                    </option>
-                    {foodsForDropdown.map(food => (
-                      <option key={food.id} value={food.id} disabled={formData.foodIds.includes(food.id)}>
-                        {food.name} — ₹{food.price}{formData.foodIds.includes(food.id) ? ' (added)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleAddFood}
-                    disabled={!foodDropdownValue}
-                    className="px-4 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 disabled:opacity-40 flex-shrink-0"
-                  >
-                    Add
-                  </button>
-                </div>
-                {/* Selected food chips */}
-                {formData.foodIds.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
                     {formData.foodIds.map(foodId => (
-                      <span key={foodId} className="flex items-center gap-1.5 bg-gray-50 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full border border-gray-200">
+                      <span key={foodId} className="flex items-center gap-1.5 bg-white text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full border border-gray-200">
                         🍽️ {getFoodName(foodId)}
                         <button type="button" onClick={() => handleRemoveFood(foodId)} className="hover:text-gray-900">
                           <X className="w-3 h-3" />
@@ -483,16 +445,7 @@ export default function Banners() {
                       </span>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Overall summary */}
-              {(formData.categoryIds.length > 0 || formData.foodIds.length > 0) && (
-                <p className="text-xs text-gray-500 -mt-2">
-                  Total selected: {formData.categoryIds.length > 0 && `${formData.categoryIds.length} whole categor${formData.categoryIds.length > 1 ? 'ies' : 'y'}`}
-                  {formData.categoryIds.length > 0 && formData.foodIds.length > 0 && ' + '}
-                  {formData.foodIds.length > 0 && `${formData.foodIds.length} individual food item${formData.foodIds.length > 1 ? 's' : ''}`}
-                </p>
+                </div>
               )}
 
               {/* Discount */}
