@@ -28,7 +28,6 @@ export default function Banners() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingBanner, setEditingBanner] = useState(null);
-  // ✅ CHANGED: replaces expandedCategoryId — now tracks which category is shown on the RIGHT panel
   const [activeCategoryId, setActiveCategoryId] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -59,7 +58,6 @@ export default function Banners() {
       const catSnap = await getDocs(collection(db, 'categories'));
       const catList = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       setCategories(catList);
-      // ✅ NEW: default the right panel to the first category so it's not blank on open
       if (catList.length > 0) {
         setActiveCategoryId(prev => prev || catList[0].id);
       }
@@ -76,7 +74,6 @@ export default function Banners() {
 
     setLoading(false);
   }, []);
-
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch; state updates happen after the awaited firestore calls, not synchronously
     fetchData();
@@ -99,8 +96,6 @@ export default function Banners() {
         categoryIds: exists
           ? prev.categoryIds.filter(id => id !== catId)
           : [...prev.categoryIds, catId],
-        // remove any individually-selected foods belonging to this category —
-        // the category-level selection now supersedes them
         foodIds: prev.foodIds.filter(fid => !catFoodIds.includes(fid)),
       };
     });
@@ -118,15 +113,12 @@ export default function Banners() {
     });
   };
 
-  // ✅ CHANGED: renamed from toggleExpand — now just switches which category's foods show on the right
   const selectActiveCategory = (catId) => {
     setActiveCategoryId(catId);
   };
 
   const getFoodsForCategory = (catId) => foods.filter(f => f.categoryId === catId);
 
-  // ✅ NEW: count of items selected (whole category counts as all its foods) for a given category —
-  // shown as a small badge next to each category in the left list
   const getSelectionCountForCategory = (catId) => {
     const catFoods = getFoodsForCategory(catId);
     if (formData.categoryIds.includes(catId)) return catFoods.length;
@@ -197,7 +189,6 @@ export default function Banners() {
     });
     setImagePreview(banner.imageUrl || '');
     setImageFile(null);
-    // ✅ NEW: open the right panel on the first selected category (or first category overall)
     const firstSelectedCat = (banner.categoryIds && banner.categoryIds[0]) || categories[0]?.id || null;
     setActiveCategoryId(firstSelectedCat);
     setIsModalOpen(true);
@@ -331,7 +322,7 @@ export default function Banners() {
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
               </div>
 
-              {/* ✅ CHANGED: Two-column selector — categories on the left, foods of the active category on the right */}
+              {/* Two-column selector — categories on the left, foods of the active category on the right */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Categories / Foods * <span className="text-xs text-gray-400 font-normal">(click a category to see its foods on the right — check the category for all items, or pick individual foods)</span>
@@ -428,7 +419,6 @@ export default function Banners() {
                     </div>
                   </div>
                 )}
-                {/* ✅ NEW: overall selection summary below the two-column box */}
                 {(formData.categoryIds.length > 0 || formData.foodIds.length > 0) && (
                   <p className="text-xs text-gray-500 mt-2">
                     Selected: {formData.categoryIds.length > 0 && `${formData.categoryIds.length} whole categor${formData.categoryIds.length > 1 ? 'ies' : 'y'}`}
