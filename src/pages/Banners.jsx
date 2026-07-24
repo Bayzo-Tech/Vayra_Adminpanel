@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, Pencil, Check } from 'lucide-react';
 import { db } from '../firebase';
@@ -37,15 +37,13 @@ export default function Banners() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
 
-  // ✅ FIX: banner fetch and category fetch — separate try/catch,
-  // so one failing doesn't block the other from loading
-  const fetchData = async () => {
+  // ✅ FIX: wrapped in useCallback so useEffect dependency warning goes away
+  const fetchData = useCallback(async () => {
     try {
       const bannerSnap = await getDocs(query(collection(db, 'banners'), orderBy('orderIndex', 'asc')));
       setBanners(bannerSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (error) {
       console.error('Error fetching banners (orderBy failed, trying without):', error);
-      // fallback: fetch without orderBy in case orderIndex field is missing on old docs
       try {
         const fallbackSnap = await getDocs(collection(db, 'banners'));
         setBanners(fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -56,17 +54,19 @@ export default function Banners() {
 
     try {
       const catSnap = await getDocs(collection(db, 'categories'));
+      console.log('[Banners] categories snapshot size:', catSnap.size, catSnap.docs.map(d => d.id));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
 
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch; state updates happen after the awaited firestore calls, not synchronously
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
