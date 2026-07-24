@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
-import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, Pencil, Check } from 'lucide-react';
+import { Plus, XCircle, Image as ImageIcon, Camera, Trash2, Pencil, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { db } from '../firebase';
 
 const CLOUD_NAME = "dvkjhuzdr";
@@ -23,10 +23,12 @@ const uploadToCloudinary = async (file) => {
 export default function Banners() {
   const [banners, setBanners] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [foods, setFoods] = useState([]); // ✅ NEW: needed to show foods-per-category in the accordion
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingBanner, setEditingBanner] = useState(null);
+  const [expandedCategoryId, setExpandedCategoryId] = useState(null); // ✅ NEW: which category's food list is open
 
   const [formData, setFormData] = useState({
     title: '',
@@ -37,7 +39,6 @@ export default function Banners() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
 
-  // ✅ FIX: wrapped in useCallback so useEffect dependency warning goes away
   const fetchData = useCallback(async () => {
     try {
       const bannerSnap = await getDocs(query(collection(db, 'banners'), orderBy('orderIndex', 'asc')));
@@ -54,10 +55,17 @@ export default function Banners() {
 
     try {
       const catSnap = await getDocs(collection(db, 'categories'));
-      console.log('[Banners] categories snapshot size:', catSnap.size, catSnap.docs.map(d => d.id));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (error) {
       console.error('Error fetching categories:', error);
+    }
+
+    // ✅ NEW: fetch foods so we can show "what's inside this category" in the accordion
+    try {
+      const foodSnap = await getDocs(collection(db, 'foods'));
+      setFoods(foodSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.error('Error fetching foods:', error);
     }
 
     setLoading(false);
@@ -87,6 +95,14 @@ export default function Banners() {
       };
     });
   };
+
+  // ✅ NEW: expand/collapse a category's food list (independent of selection)
+  const toggleExpand = (catId) => {
+    setExpandedCategoryId(prev => (prev === catId ? null : catId));
+  };
+
+  // ✅ NEW: get foods belonging to a category
+  const getFoodsForCategory = (catId) => foods.filter(f => f.categoryId === catId);
 
   const handleAddBanner = async (e) => {
     e.preventDefault();
@@ -159,6 +175,7 @@ export default function Banners() {
     setFormData({ title: '', categoryIds: [], discountPercent: '0', status: 'Active' });
     setImagePreview('');
     setImageFile(null);
+    setExpandedCategoryId(null); // ✅ NEW: reset accordion state on close
   };
 
   const getCategoryNames = (ids) => {
@@ -265,29 +282,65 @@ export default function Banners() {
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
               </div>
 
-              {/* Category multi-select */}
+              {/* ✅ CHANGED: Category accordion (dropdown) instead of grid buttons */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Categories * <span className="text-xs text-gray-400 font-normal">(select all that apply)</span>
+                  Categories * <span className="text-xs text-gray-400 font-normal">(select — expand to see foods inside)</span>
                 </label>
                 {categories.length === 0 ? (
                   <p className="text-xs text-orange-500">No categories found. Add categories first.</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border border-gray-200 rounded-xl p-3">
+                  <div className="border border-gray-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto divide-y divide-gray-100">
                     {categories.map(cat => {
                       const selected = formData.categoryIds.includes(cat.id);
+                      const isExpanded = expandedCategoryId === cat.id;
+                      const catFoods = getFoodsForCategory(cat.id);
                       return (
-                        <button
-                          type="button"
-                          key={cat.id}
-                          onClick={() => toggleCategory(cat.id)}
-                          className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                            selected ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200'
-                          }`}
-                        >
-                          {selected && <Check className="w-3 h-3 flex-shrink-0" />}
-                          <span className="truncate">{cat.name}</span>
-                        </button>
+                        <div key={cat.id} className="bg-white">
+                          {/* Category row — click name to select, click chevron to expand */}
+                          <div className={`flex items-center justify-between px-3 py-2.5 ${selected ? 'bg-orange-50' : ''}`}>
+                            <button
+                              type="button"
+                              onClick={() => toggleCategory(cat.id)}
+                              className="flex items-center gap-2 flex-1 text-left"
+                            >
+                              <span className={`w-4 h-4 rounded flex items-center justify-center border-2 flex-shrink-0 ${
+                                selected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
+                              }`}>
+                                {selected && <Check className="w-3 h-3 text-white" />}
+                              </span>
+                              <span className={`text-sm font-medium ${selected ? 'text-orange-700' : 'text-gray-700'}`}>
+                                {cat.name}
+                              </span>
+                              <span className="text-xs text-gray-400">({catFoods.length} items)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(cat.id)}
+                              className="p-1 text-gray-400 hover:text-gray-600"
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
+
+                          {/* ✅ NEW: expanded foods list — read-only, just shows what's inside */}
+                          {isExpanded && (
+                            <div className="bg-gray-50 px-4 py-2">
+                              {catFoods.length === 0 ? (
+                                <p className="text-xs text-gray-400 py-1">No food items in this category yet.</p>
+                              ) : (
+                                <ul className="space-y-1">
+                                  {catFoods.map(food => (
+                                    <li key={food.id} className="flex items-center justify-between text-xs text-gray-600 py-1">
+                                      <span>🍽️ {food.name}</span>
+                                      <span className="text-gray-400">₹{food.price}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
