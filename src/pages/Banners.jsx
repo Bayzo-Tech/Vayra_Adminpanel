@@ -37,18 +37,31 @@ export default function Banners() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
 
+  // ✅ FIX: banner fetch and category fetch — separate try/catch,
+  // so one failing doesn't block the other from loading
   const fetchData = async () => {
     try {
       const bannerSnap = await getDocs(query(collection(db, 'banners'), orderBy('orderIndex', 'asc')));
       setBanners(bannerSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.error('Error fetching banners (orderBy failed, trying without):', error);
+      // fallback: fetch without orderBy in case orderIndex field is missing on old docs
+      try {
+        const fallbackSnap = await getDocs(collection(db, 'banners'));
+        setBanners(fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (fallbackError) {
+        console.error('Fallback banner fetch also failed:', fallbackError);
+      }
+    }
 
+    try {
       const catSnap = await getDocs(collection(db, 'categories'));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (error) {
-      console.error('Error fetching banners:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching categories:', error);
     }
+
+    setLoading(false);
   };
 
   useEffect(() => {
