@@ -23,16 +23,17 @@ const uploadToCloudinary = async (file) => {
 export default function Banners() {
   const [banners, setBanners] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [foods, setFoods] = useState([]); // ✅ NEW: needed to show foods-per-category in the accordion
+  const [foods, setFoods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingBanner, setEditingBanner] = useState(null);
-  const [expandedCategoryId, setExpandedCategoryId] = useState(null); // ✅ NEW: which category's food list is open
+  const [expandedCategoryId, setExpandedCategoryId] = useState(null);
 
   const [formData, setFormData] = useState({
     title: '',
-    categoryIds: [],
+    categoryIds: [],   // whole categories selected (all foods inside included)
+    foodIds: [],        // ✅ NEW: individual foods selected without selecting the whole category
     discountPercent: '0',
     status: 'Active',
   });
@@ -60,7 +61,6 @@ export default function Banners() {
       console.error('Error fetching categories:', error);
     }
 
-    // ✅ NEW: fetch foods so we can show "what's inside this category" in the accordion
     try {
       const foodSnap = await getDocs(collection(db, 'foods'));
       setFoods(foodSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -84,30 +84,47 @@ export default function Banners() {
     }
   };
 
+  // ✅ Selecting a whole category — also clears any individually-selected foods from that
+  // category (since the category checkbox now covers them all, avoids duplicate state)
   const toggleCategory = (catId) => {
     setFormData(prev => {
       const exists = prev.categoryIds.includes(catId);
+      const catFoodIds = foods.filter(f => f.categoryId === catId).map(f => f.id);
       return {
         ...prev,
         categoryIds: exists
           ? prev.categoryIds.filter(id => id !== catId)
           : [...prev.categoryIds, catId],
+        // remove any individually-selected foods belonging to this category —
+        // the category-level selection now supersedes them
+        foodIds: prev.foodIds.filter(fid => !catFoodIds.includes(fid)),
       };
     });
   };
 
-  // ✅ NEW: expand/collapse a category's food list (independent of selection)
+  // ✅ NEW: select/deselect a single food item (independent of category selection)
+  const toggleFood = (foodId) => {
+    setFormData(prev => {
+      const exists = prev.foodIds.includes(foodId);
+      return {
+        ...prev,
+        foodIds: exists
+          ? prev.foodIds.filter(id => id !== foodId)
+          : [...prev.foodIds, foodId],
+      };
+    });
+  };
+
   const toggleExpand = (catId) => {
     setExpandedCategoryId(prev => (prev === catId ? null : catId));
   };
 
-  // ✅ NEW: get foods belonging to a category
   const getFoodsForCategory = (catId) => foods.filter(f => f.categoryId === catId);
 
   const handleAddBanner = async (e) => {
     e.preventDefault();
-    if (formData.categoryIds.length === 0) {
-      alert('Please select at least one category');
+    if (formData.categoryIds.length === 0 && formData.foodIds.length === 0) {
+      alert('Please select at least one category or food item');
       return;
     }
     if (!editingBanner && !imageFile) {
@@ -124,6 +141,7 @@ export default function Banners() {
         title: formData.title,
         imageUrl,
         categoryIds: formData.categoryIds,
+        foodIds: formData.foodIds, // ✅ NEW: individually selected foods
         discountPercent: Number(formData.discountPercent),
         status: formData.status,
         orderIndex: editingBanner?.orderIndex ?? banners.length,
@@ -161,6 +179,7 @@ export default function Banners() {
     setFormData({
       title: banner.title || '',
       categoryIds: banner.categoryIds || [],
+      foodIds: banner.foodIds || [], // ✅ NEW
       discountPercent: banner.discountPercent?.toString() || '0',
       status: banner.status || 'Active',
     });
@@ -172,10 +191,10 @@ export default function Banners() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingBanner(null);
-    setFormData({ title: '', categoryIds: [], discountPercent: '0', status: 'Active' });
+    setFormData({ title: '', categoryIds: [], foodIds: [], discountPercent: '0', status: 'Active' });
     setImagePreview('');
     setImageFile(null);
-    setExpandedCategoryId(null); // ✅ NEW: reset accordion state on close
+    setExpandedCategoryId(null);
   };
 
   const getCategoryNames = (ids) => {
@@ -183,6 +202,16 @@ export default function Banners() {
       .map(id => categories.find(c => c.id === id)?.name)
       .filter(Boolean)
       .join(', ');
+  };
+
+  // ✅ NEW: summary text for banner card — shows category count + individual food count
+  const getSelectionSummary = (banner) => {
+    const catCount = (banner.categoryIds || []).length;
+    const foodCount = (banner.foodIds || []).length;
+    const parts = [];
+    if (catCount > 0) parts.push(`${catCount} categor${catCount > 1 ? 'ies' : 'y'}`);
+    if (foodCount > 0) parts.push(`${foodCount} food item${foodCount > 1 ? 's' : ''}`);
+    return parts.length > 0 ? parts.join(' + ') : 'No selection';
   };
 
   return (
@@ -252,9 +281,12 @@ export default function Banners() {
                     </button>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 line-clamp-2">
-                  📂 {getCategoryNames(banner.categoryIds) || 'No categories'}
+                <p className="text-xs text-gray-500">
+                  📂 {getSelectionSummary(banner)}
                 </p>
+                {banner.categoryIds?.length > 0 && (
+                  <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-1">{getCategoryNames(banner.categoryIds)}</p>
+                )}
               </div>
             </div>
           ))}
@@ -282,37 +314,41 @@ export default function Banners() {
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
               </div>
 
-              {/* ✅ CHANGED: Category accordion (dropdown) instead of grid buttons */}
+              {/* ✅ CHANGED: Category accordion — category checkbox selects whole category,
+                  expand shows individual foods each with their OWN checkbox */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Categories * <span className="text-xs text-gray-400 font-normal">(select — expand to see foods inside)</span>
+                  Categories / Foods * <span className="text-xs text-gray-400 font-normal">(select a whole category, OR expand and pick individual foods)</span>
                 </label>
                 {categories.length === 0 ? (
                   <p className="text-xs text-orange-500">No categories found. Add categories first.</p>
                 ) : (
-                  <div className="border border-gray-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto divide-y divide-gray-100">
+                  <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto divide-y divide-gray-100">
                     {categories.map(cat => {
-                      const selected = formData.categoryIds.includes(cat.id);
+                      const catSelected = formData.categoryIds.includes(cat.id);
                       const isExpanded = expandedCategoryId === cat.id;
                       const catFoods = getFoodsForCategory(cat.id);
+                      const selectedFoodsInCat = catFoods.filter(f => formData.foodIds.includes(f.id)).length;
                       return (
                         <div key={cat.id} className="bg-white">
-                          {/* Category row — click name to select, click chevron to expand */}
-                          <div className={`flex items-center justify-between px-3 py-2.5 ${selected ? 'bg-orange-50' : ''}`}>
+                          {/* Category row */}
+                          <div className={`flex items-center justify-between px-3 py-2.5 ${catSelected ? 'bg-orange-50' : ''}`}>
                             <button
                               type="button"
                               onClick={() => toggleCategory(cat.id)}
                               className="flex items-center gap-2 flex-1 text-left"
                             >
                               <span className={`w-4 h-4 rounded flex items-center justify-center border-2 flex-shrink-0 ${
-                                selected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
+                                catSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
                               }`}>
-                                {selected && <Check className="w-3 h-3 text-white" />}
+                                {catSelected && <Check className="w-3 h-3 text-white" />}
                               </span>
-                              <span className={`text-sm font-medium ${selected ? 'text-orange-700' : 'text-gray-700'}`}>
+                              <span className={`text-sm font-medium ${catSelected ? 'text-orange-700' : 'text-gray-700'}`}>
                                 {cat.name}
                               </span>
-                              <span className="text-xs text-gray-400">({catFoods.length} items)</span>
+                              <span className="text-xs text-gray-400">
+                                ({catFoods.length} items{!catSelected && selectedFoodsInCat > 0 ? `, ${selectedFoodsInCat} selected` : ''})
+                              </span>
                             </button>
                             <button
                               type="button"
@@ -323,20 +359,42 @@ export default function Banners() {
                             </button>
                           </div>
 
-                          {/* ✅ NEW: expanded foods list — read-only, just shows what's inside */}
+                          {/* ✅ Expanded foods — each with its own checkbox */}
                           {isExpanded && (
                             <div className="bg-gray-50 px-4 py-2">
                               {catFoods.length === 0 ? (
                                 <p className="text-xs text-gray-400 py-1">No food items in this category yet.</p>
                               ) : (
                                 <ul className="space-y-1">
-                                  {catFoods.map(food => (
-                                    <li key={food.id} className="flex items-center justify-between text-xs text-gray-600 py-1">
-                                      <span>🍽️ {food.name}</span>
-                                      <span className="text-gray-400">₹{food.price}</span>
-                                    </li>
-                                  ))}
+                                  {catFoods.map(food => {
+                                    const foodSelected = catSelected || formData.foodIds.includes(food.id);
+                                    return (
+                                      <li key={food.id}>
+                                        <button
+                                          type="button"
+                                          onClick={() => !catSelected && toggleFood(food.id)}
+                                          disabled={catSelected}
+                                          className={`w-full flex items-center justify-between text-xs py-1.5 px-1 rounded-lg ${
+                                            catSelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100'
+                                          }`}
+                                        >
+                                          <span className="flex items-center gap-2">
+                                            <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border-2 flex-shrink-0 ${
+                                              foodSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
+                                            }`}>
+                                              {foodSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                                            </span>
+                                            <span className="text-gray-600">🍽️ {food.name}</span>
+                                          </span>
+                                          <span className="text-gray-400">₹{food.price}</span>
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
                                 </ul>
+                              )}
+                              {catSelected && (
+                                <p className="text-[10px] text-orange-500 mt-1 px-1">Whole category selected — all items included automatically.</p>
                               )}
                             </div>
                           )}
@@ -354,7 +412,7 @@ export default function Banners() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                   value={formData.discountPercent}
                   onChange={(e) => setFormData({ ...formData, discountPercent: e.target.value })} />
-                <p className="text-xs text-gray-400 mt-1">Applied to all foods in the selected categories when customer opens this banner.</p>
+                <p className="text-xs text-gray-400 mt-1">Applied to all selected categories and food items when customer opens this banner.</p>
               </div>
 
               {/* Status */}
