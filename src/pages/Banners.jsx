@@ -32,6 +32,7 @@ export default function Banners() {
 
   const [formData, setFormData] = useState({
     title: '',
+    badge: '',
     categoryIds: [],
     foodIds: [],
     discountPercent: '0',
@@ -159,6 +160,7 @@ export default function Banners() {
       }
       const bannerData = {
         title: formData.title,
+        badge: formData.badge,
         imageUrl,
         categoryIds: formData.categoryIds,
         foodIds: formData.foodIds,
@@ -198,6 +200,7 @@ export default function Banners() {
     setEditingBanner(banner);
     setFormData({
       title: banner.title || '',
+      badge: banner.badge || '',
       categoryIds: banner.categoryIds || [],
       foodIds: banner.foodIds || [],
       discountPercent: banner.discountPercent?.toString() || '0',
@@ -213,7 +216,7 @@ export default function Banners() {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingBanner(null);
-    setFormData({ title: '', categoryIds: [], foodIds: [], discountPercent: '0', status: 'Active' });
+    setFormData({ title: '', badge: '', categoryIds: [], foodIds: [], discountPercent: '0', status: 'Active' });
     setImagePreview('');
     setImageFile(null);
     setAreaFilter('');
@@ -306,6 +309,9 @@ export default function Banners() {
                     </button>
                   </div>
                 </div>
+                {banner.badge && (
+                  <p className="text-[11px] font-semibold text-orange-600 mb-1">🏷️ {banner.badge}</p>
+                )}
                 <p className="text-xs text-gray-500">
                   📂 {getSelectionSummary(banner)}
                 </p>
@@ -333,10 +339,21 @@ export default function Banners() {
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Banner Title</label>
-                <input type="text" placeholder="e.g. Summer Sale"
+                <input type="text" placeholder="e.g. Fresh Catch Daily"
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
+                <p className="text-xs text-gray-400 mt-1">Shown as bold text at the bottom of the banner image on the home screen.</p>
+              </div>
+
+              {/* ✅ NEW: Badge — small pill text shown top-left on the banner (e.g. "Free Delivery", "20% OFF") */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Badge Text</label>
+                <input type="text" placeholder="e.g. Free Delivery"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                  value={formData.badge}
+                  onChange={(e) => setFormData({ ...formData, badge: e.target.value })} />
+                <p className="text-xs text-gray-400 mt-1">Small highlighted tag shown on the top-left corner of the banner.</p>
               </div>
 
               {/* Area dropdown */}
