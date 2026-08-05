@@ -27,6 +27,7 @@ export default function BeachZone() {
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time fetch on mount, safe here
   useEffect(() => { fetchBeaches(); }, [fetchBeaches]);
 
   const handleAddBeach = async (e) => {

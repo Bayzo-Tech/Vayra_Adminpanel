@@ -1,8 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-
-const AuthContext = createContext();
-
-export const useAuth = () => useContext(AuthContext);
+import { useState, useEffect } from 'react';
+import { AuthContext } from './AuthContextInstance';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -10,9 +7,15 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // Check localStorage for existing session
-    const storedUser = localStorage.getItem('bayzo_admin_auth');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    try {
+      const storedUser = localStorage.getItem('bayzo_admin_auth');
+      if (storedUser) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time session check on mount, safe here
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (e) {
+      console.error('Failed to parse stored auth, clearing it:', e);
+      localStorage.removeItem('bayzo_admin_auth');
     }
     setLoading(false);
   }, []);
