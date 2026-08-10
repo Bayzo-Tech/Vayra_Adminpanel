@@ -6,6 +6,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false); // ✅ NEW: login is now async (network call)
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -13,15 +14,19 @@ export default function Login() {
     return <Navigate to="/dashboard" />;
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
-    if (login(email, password)) {
+    setSubmitting(true);
+
+    const success = await login(email, password); // ✅ CHANGED: login() is now async
+
+    if (success) {
       navigate('/dashboard');
     } else {
       setError('Invalid email or password');
     }
+    setSubmitting(false);
   };
 
   return (
@@ -53,8 +58,9 @@ export default function Login() {
               <input
                 type="email"
                 required
-                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                placeholder="Vayratech2025@gmail.com"
+                disabled={submitting}
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:opacity-60"
+                placeholder="admin@vayrazone.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -66,7 +72,8 @@ export default function Login() {
               <input
                 type="password"
                 required
-                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                disabled={submitting}
+                className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:opacity-60"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -77,9 +84,10 @@ export default function Login() {
           <div>
             <button
               type="submit"
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors"
+              disabled={submitting}
+              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-primary hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors disabled:opacity-60"
             >
-              Sign in
+              {submitting ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
         </form>

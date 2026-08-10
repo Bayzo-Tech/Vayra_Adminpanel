@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 import { AuthContext } from './AuthContextInstance';
 
 export const AuthProvider = ({ children }) => {
@@ -6,34 +8,37 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check localStorage for existing session
-    try {
-      const storedUser = localStorage.getItem('bayzo_admin_auth');
-      if (storedUser) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time session check on mount, safe here
-        setUser(JSON.parse(storedUser));
+    // ✅ CHANGED: real Firebase Auth session listener instead of manual localStorage check.
+    // Firebase persists the session in the browser automatically, so this fires with the
+    // correct state on every page load/refresh.
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({ email: firebaseUser.email, uid: firebaseUser.uid, role: 'admin' });
+      } else {
+        setUser(null);
       }
-    } catch (e) {
-      console.error('Failed to parse stored auth, clearing it:', e);
-      localStorage.removeItem('bayzo_admin_auth');
-    }
-    setLoading(false);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const login = (email, password) => {
-    // Hardcoded credentials as requested
-    if (email === 'Vayratech2025@gmail.com' && password === 'VayraTech20@25') {
-      const userData = { email, role: 'admin' };
-      localStorage.setItem('bayzo_admin_auth', JSON.stringify(userData));
-      setUser(userData);
+  // ✅ CHANGED: now async — verifies against real Firebase Auth instead of a hardcoded check.
+  const login = async (email, password) => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       return true;
+    } catch (err) {
+      console.error('Admin login failed:', err.code || err.message);
+      return false;
     }
-    return false;
   };
 
-  const logout = () => {
-    localStorage.removeItem('bayzo_admin_auth');
-    setUser(null);
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
   };
 
   const value = {

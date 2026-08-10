@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteField } from 'firebase/firestore';
 import { Store, Search, X } from 'lucide-react';
 import { db } from '../firebase';
 
@@ -9,8 +9,11 @@ export default function Vendors() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('All');
   const [dutyTab, setDutyTab] = useState('All');
-  const [selectedVendor, setSelectedVendor] = useState(null);
+  const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
+  const [resolvingField, setResolvingField] = useState(null);
+
+  const selectedVendor = vendors.find(v => v.id === selectedVendorId) || null;
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'vendors'), (snapshot) => {
@@ -34,9 +37,6 @@ export default function Vendors() {
         // partnerProfiles may not exist for all vendors
       }
       setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, status: newStatus } : v));
-      if (selectedVendor?.id === vendorId) {
-        setSelectedVendor(prev => ({ ...prev, status: newStatus }));
-      }
     } catch (error) {
       console.error('Error updating vendor status:', error);
     } finally {
@@ -50,6 +50,28 @@ export default function Vendors() {
       setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, isOnDuty: !currentDuty } : v));
     } catch (error) {
       console.error('Error updating duty status:', error);
+    }
+  };
+
+  const handleResolvePendingChange = async (vendorId, field, action) => {
+    setResolvingField(`${vendorId}-${field}`);
+    try {
+      const vendor = vendors.find(v => v.id === vendorId);
+      const pending = vendor?.pendingImageChanges?.[field];
+      if (action === 'approve' && pending) {
+        await updateDoc(doc(db, 'vendors', vendorId), {
+          [field]: pending.url,
+          [`pendingImageChanges.${field}`]: deleteField(),
+        });
+      } else {
+        await updateDoc(doc(db, 'vendors', vendorId), {
+          [`pendingImageChanges.${field}`]: deleteField(),
+        });
+      }
+    } catch (error) {
+      console.error('Error resolving pending change:', error);
+    } finally {
+      setResolvingField(null);
     }
   };
 
@@ -153,7 +175,7 @@ export default function Vendors() {
                   <tr
                     key={vendor.id}
                     className="hover:bg-orange-50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedVendor(vendor)}
+                    onClick={() => setSelectedVendorId(vendor.id)}
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
@@ -211,11 +233,11 @@ export default function Vendors() {
 
       {/* Vendor Details Modal */}
       {selectedVendor && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSelectedVendor(null)}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSelectedVendorId(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">Vendor Details</h2>
-              <button onClick={() => setSelectedVendor(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setSelectedVendorId(null)} className="text-gray-400 hover:text-gray-600">
                 <X size={22} />
               </button>
             </div>
@@ -254,21 +276,54 @@ export default function Vendors() {
                 <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">Documents</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
-                    { label: '📋 FSSAI Certificate', img: selectedVendor.fssaiImage },
-                    { label: '🪪 Aadhaar Card', img: selectedVendor.aadhaarImage },
-                    { label: '🪪 PAN Card', img: selectedVendor.panImage },
-                    { label: '🤳 Selfie', img: selectedVendor.selfie },
-                    { label: '🏪 Selfie at Stall', img: selectedVendor.selfieFrontStall },
-                  ].map(({ label, img }) => (
-                    <div key={label} className="border border-gray-200 rounded-xl overflow-hidden">
-                      <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">{label}</div>
-                      {img ? (
-                        <img src={img} alt={label} className="w-full h-36 object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(img, '_blank')} />
-                      ) : (
-                        <div className="h-36 flex items-center justify-center text-gray-300 text-sm">Not uploaded</div>
-                      )}
-                    </div>
-                  ))}
+                    { label: '📋 FSSAI Certificate', field: 'fssaiImage' },
+                    { label: '🪪 Aadhaar Card', field: 'aadhaarImage' },
+                    { label: '🪪 PAN Card', field: 'panImage' },
+                    { label: '🤳 Selfie', field: 'selfie' },
+                    { label: '🏪 Selfie at Stall', field: 'selfieFrontStall' },
+                    { label: '🏪 Stall Photo', field: 'stallImage' },
+                  ].map(({ label, field }) => {
+                    const img = selectedVendor[field];
+                    const pending = selectedVendor.pendingImageChanges?.[field];
+                    const isResolving = resolvingField === `${selectedVendor.id}-${field}`;
+                    return (
+                      <div key={field} className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">{label}</div>
+                        {img ? (
+                          <img src={img} alt={label} className="w-full h-36 object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(img, '_blank')} />
+                        ) : (
+                          <div className="h-36 flex items-center justify-center text-gray-300 text-sm">Not uploaded</div>
+                        )}
+                        {pending && (
+                          <div className="border-t border-yellow-200 bg-yellow-50 p-2">
+                            <p className="text-[10px] font-semibold text-yellow-700 mb-1">⏳ New image pending approval</p>
+                            <img
+                              src={pending.url}
+                              alt="pending change"
+                              className="w-full h-24 object-cover rounded mb-2 cursor-pointer"
+                              onClick={() => window.open(pending.url, '_blank')}
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleResolvePendingChange(selectedVendor.id, field, 'approve')}
+                                disabled={isResolving}
+                                className="flex-1 bg-green-500 text-white text-xs py-1.5 rounded-lg hover:bg-green-600 disabled:opacity-50"
+                              >
+                                ✓ Approve
+                              </button>
+                              <button
+                                onClick={() => handleResolvePendingChange(selectedVendor.id, field, 'reject')}
+                                disabled={isResolving}
+                                className="flex-1 bg-red-500 text-white text-xs py-1.5 rounded-lg hover:bg-red-600 disabled:opacity-50"
+                              >
+                                ✗ Reject
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -300,7 +355,7 @@ export default function Vendors() {
                 {(selectedVendor.status === 'pending' || selectedVendor.status === 'approved' || !selectedVendor.status) && (
                   <button onClick={() => handleUpdateStatus(selectedVendor.id, 'rejected')} disabled={updatingId === selectedVendor.id} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-semibold hover:bg-red-600 disabled:opacity-50">✗ Reject</button>
                 )}
-                <button onClick={() => setSelectedVendor(null)} className="px-6 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-semibold hover:bg-gray-200">Close</button>
+                <button onClick={() => setSelectedVendorId(null)} className="px-6 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-semibold hover:bg-gray-200">Close</button>
               </div>
             </div>
           </div>
