@@ -3,6 +3,18 @@ import { collection, onSnapshot, doc, updateDoc, deleteField } from 'firebase/fi
 import { Store, Search, X } from 'lucide-react';
 import { db } from '../firebase';
 
+// Canonical area list — order controls display order of the sections/cards
+const AREAS = ['Palavakkam', 'Thiruvanmiyur', 'Marina', 'Besant Nagar'];
+const UNASSIGNED = 'Unassigned';
+
+// Normalizes "besant nagar", "Besant  Nagar", " MARINA " etc. to the canonical name
+function normalizeArea(rawArea) {
+  if (!rawArea || typeof rawArea !== 'string') return UNASSIGNED;
+  const cleaned = rawArea.trim().toLowerCase().replace(/\s+/g, ' ');
+  const match = AREAS.find(a => a.toLowerCase() === cleaned);
+  return match || UNASSIGNED;
+}
+
 export default function Vendors() {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,6 +24,8 @@ export default function Vendors() {
   const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [updatingId, setUpdatingId] = useState(null);
   const [resolvingField, setResolvingField] = useState(null);
+  // NEW: which area sections are collapsed. Empty set = all expanded.
+  const [collapsedAreas, setCollapsedAreas] = useState(new Set());
 
   const selectedVendor = vendors.find(v => v.id === selectedVendorId) || null;
 
@@ -75,6 +89,15 @@ export default function Vendors() {
     }
   };
 
+  const toggleAreaCollapse = (area) => {
+    setCollapsedAreas(prev => {
+      const next = new Set(prev);
+      if (next.has(area)) next.delete(area);
+      else next.add(area);
+      return next;
+    });
+  };
+
   const filteredVendors = vendors.filter(vendor => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
@@ -89,12 +112,80 @@ export default function Vendors() {
     return matchesSearch && matchesTab && matchesDuty;
   });
 
+  // Group filtered vendors by canonical area. Only include an "Unassigned"
+  // section if there's actually at least one vendor in it.
+  const groupedByArea = (() => {
+    const groups = {};
+    AREAS.forEach(a => { groups[a] = []; });
+    groups[UNASSIGNED] = [];
+    filteredVendors.forEach(v => {
+      const area = normalizeArea(v.area);
+      groups[area].push(v);
+    });
+    const orderedAreaKeys = [...AREAS, ...(groups[UNASSIGNED].length ? [UNASSIGNED] : [])];
+    return { groups, orderedAreaKeys };
+  })();
+
   const getStatusBadge = (status) => {
     const s = status || 'pending';
     if (s === 'approved') return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">✓ Approved</span>;
     if (s === 'rejected') return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">✗ Rejected</span>;
     return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">⏳ Pending</span>;
   };
+
+  // Extracted so the exact same row markup can be reused inside every area section
+  const renderVendorRow = (vendor) => (
+    <tr
+      key={vendor.id}
+      className="hover:bg-orange-50 cursor-pointer transition-colors"
+      onClick={() => setSelectedVendorId(vendor.id)}
+    >
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="flex items-center gap-3">
+          {vendor.stallImage ? (
+            <img className="h-10 w-10 rounded object-cover" src={vendor.stallImage} alt="" />
+          ) : (
+            <div className="h-10 w-10 rounded bg-orange-50 flex items-center justify-center">
+              <Store className="h-5 w-5 text-primary" />
+            </div>
+          )}
+          <div>
+            <div className="text-sm font-medium text-gray-900">{vendor.stallName || vendor.name || 'Unnamed Stall'}</div>
+            <div className="text-xs text-gray-400">Owner: {vendor.name}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="text-sm text-gray-900">{vendor.phone || 'N/A'}</div>
+        <div className="text-xs text-gray-500">Age: {vendor.age || '-'}</div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleToggleDuty(vendor.id, vendor.isOnDuty)}
+            className={`relative inline-flex flex-shrink-0 h-5 w-10 border-2 border-transparent rounded-full cursor-pointer transition-colors duration-200 ${vendor.isOnDuty ? 'bg-primary' : 'bg-gray-200'}`}
+          >
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ${vendor.isOnDuty ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+          {vendor.isOnDuty
+            ? <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">🟢 On Duty</span>
+            : <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">🔴 Off Duty</span>
+          }
+        </div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(vendor.status)}</td>
+      <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+        <div className="flex gap-2">
+          {(vendor.status === 'pending' || vendor.status === 'rejected' || !vendor.status) && (
+            <button onClick={() => handleUpdateStatus(vendor.id, 'approved')} disabled={updatingId === vendor.id} className="px-3 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 disabled:opacity-50">✓ Approve</button>
+          )}
+          {(vendor.status === 'pending' || vendor.status === 'approved' || !vendor.status) && (
+            <button onClick={() => handleUpdateStatus(vendor.id, 'rejected')} disabled={updatingId === vendor.id} className="px-3 py-1 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 disabled:opacity-50">✗ Reject</button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-6">
@@ -105,6 +196,22 @@ export default function Vendors() {
         </div>
         <span className="mt-3 sm:mt-0 text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">🟢 Live</span>
       </div>
+
+      {/* NEW: Area summary dashboard cards */}
+      {!loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <p className="text-xs font-medium text-gray-400 uppercase">Total Vendors</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{filteredVendors.length}</p>
+          </div>
+          {groupedByArea.orderedAreaKeys.map((area) => (
+            <div key={area} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <p className="text-xs font-medium text-gray-400 uppercase truncate">{area}</p>
+              <p className="text-2xl font-bold text-primary mt-1">{groupedByArea.groups[area].length}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="relative max-w-md">
@@ -153,83 +260,57 @@ export default function Vendors() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        ) : filteredVendors.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stall Info</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duty</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredVendors.map((vendor) => (
-                  <tr
-                    key={vendor.id}
-                    className="hover:bg-orange-50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedVendorId(vendor.id)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        {vendor.stallImage ? (
-                          <img className="h-10 w-10 rounded object-cover" src={vendor.stallImage} alt="" />
-                        ) : (
-                          <div className="h-10 w-10 rounded bg-orange-50 flex items-center justify-center">
-                            <Store className="h-5 w-5 text-primary" />
-                          </div>
-                        )}
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{vendor.stallName || vendor.name || 'Unnamed Stall'}</div>
-                          <div className="text-xs text-gray-400">Owner: {vendor.name}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{vendor.phone || 'N/A'}</div>
-                      <div className="text-xs text-gray-500">Age: {vendor.age || '-'}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleToggleDuty(vendor.id, vendor.isOnDuty)}
-                          className={`relative inline-flex flex-shrink-0 h-5 w-10 border-2 border-transparent rounded-full cursor-pointer transition-colors duration-200 ${vendor.isOnDuty ? 'bg-primary' : 'bg-gray-200'}`}
-                        >
-                          <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ${vendor.isOnDuty ? 'translate-x-5' : 'translate-x-0'}`} />
-                        </button>
-                        {vendor.isOnDuty
-                          ? <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">🟢 On Duty</span>
-                          : <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">🔴 Off Duty</span>
-                        }
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(vendor.status)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-2">
-                        {(vendor.status === 'pending' || vendor.status === 'rejected' || !vendor.status) && (
-                          <button onClick={() => handleUpdateStatus(vendor.id, 'approved')} disabled={updatingId === vendor.id} className="px-3 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 disabled:opacity-50">✓ Approve</button>
-                        )}
-                        {(vendor.status === 'pending' || vendor.status === 'approved' || !vendor.status) && (
-                          <button onClick={() => handleUpdateStatus(vendor.id, 'rejected')} disabled={updatingId === vendor.id} className="px-3 py-1 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 disabled:opacity-50">✗ Reject</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-8 text-center text-gray-500">No vendors found.</div>
-        )}
-      </div>
+      {/* Area-wise grouped sections replace the old single flat table */}
+      {loading ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex justify-center p-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      ) : filteredVendors.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-gray-500">No vendors found.</div>
+      ) : (
+        <div className="space-y-6">
+          {groupedByArea.orderedAreaKeys.map((area) => {
+            const areaVendors = groupedByArea.groups[area];
+            if (areaVendors.length === 0) return null; // hide empty areas from the section list
+            const isCollapsed = collapsedAreas.has(area);
+            return (
+              <div key={area} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <button
+                  onClick={() => toggleAreaCollapse(area)}
+                  className="w-full flex items-center justify-between px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-base font-bold text-gray-900">{area}</h2>
+                    <span className="text-xs font-semibold text-primary bg-orange-50 px-2 py-0.5 rounded-full">
+                      {areaVendors.length} vendor{areaVendors.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <span className="text-gray-400 text-sm">{isCollapsed ? '▸ Expand' : '▾ Collapse'}</span>
+                </button>
+
+                {!isCollapsed && (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stall Info</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duty</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {areaVendors.map(renderVendorRow)}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Vendor Details Modal */}
       {selectedVendor && (
@@ -259,6 +340,7 @@ export default function Vendors() {
 
               <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-xl p-4">
                 {[
+                  { label: 'Area', value: selectedVendor.area },
                   { label: 'Phone', value: selectedVendor.phone },
                   { label: 'Age', value: selectedVendor.age },
                   { label: 'Stall Open', value: selectedVendor.isOpen ? 'Yes' : 'No' },
