@@ -67,6 +67,16 @@ export default function DeliveryPartners() {
     return matchesSearch && matchesOnline;
   });
 
+  // ✅ FIXED: some partner docs (created before this field was consistently
+  // written, or via a registration flow that only set `status` on the
+  // partnerProfiles doc) have NO `status` field on the deliveryPartners doc.
+  // getStatusBadge already defaulted undefined -> "Pending" visually, but the
+  // action buttons below used a strict `partner.status === 'pending'` check,
+  // so undefined status showed the Pending badge with NO Approve/Reject
+  // buttons at all. This helper normalizes missing/falsy status to 'pending'
+  // everywhere it's used, so the badge and the buttons always agree.
+  const normalizeStatus = (status) => status || 'pending';
+
   const getStatusBadge = (status) => {
     if (status === 'approved') return (
       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
@@ -192,18 +202,18 @@ export default function DeliveryPartners() {
                     <td className="px-6 py-4 text-sm text-gray-700">{partner.phone || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{partner.area || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{partner.age || '—'} / {partner.gender || '—'}</td>
-                    <td className="px-6 py-4">{getStatusBadge(partner.status)}</td>
+                    <td className="px-6 py-4">{getStatusBadge(normalizeStatus(partner.status))}</td>
                     <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
-                      {partner.status === 'pending' && (
+                      {normalizeStatus(partner.status) === 'pending' && (
                         <div className="flex gap-2">
                           <button onClick={() => updateStatus(partner.id, 'approved')} disabled={updatingId === partner.id} className="px-3 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 disabled:opacity-50">✓ Approve</button>
                           <button onClick={() => updateStatus(partner.id, 'rejected')} disabled={updatingId === partner.id} className="px-3 py-1 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 disabled:opacity-50">✗ Reject</button>
                         </div>
                       )}
-                      {partner.status === 'approved' && (
+                      {normalizeStatus(partner.status) === 'approved' && (
                         <button onClick={() => updateStatus(partner.id, 'rejected')} disabled={updatingId === partner.id} className="px-3 py-1 bg-red-100 text-red-600 text-xs rounded-lg hover:bg-red-200 disabled:opacity-50">Revoke</button>
                       )}
-                      {partner.status === 'rejected' && (
+                      {normalizeStatus(partner.status) === 'rejected' && (
                         <button onClick={() => updateStatus(partner.id, 'approved')} disabled={updatingId === partner.id} className="px-3 py-1 bg-green-100 text-green-600 text-xs rounded-lg hover:bg-green-200 disabled:opacity-50">Re-approve</button>
                       )}
                     </td>
@@ -237,7 +247,7 @@ export default function DeliveryPartners() {
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">{selectedPartner.name}</h3>
                   <p className="text-gray-500 text-sm">{selectedPartner.email || 'No email'}</p>
-                  <div className="mt-1">{getStatusBadge(selectedPartner.status)}</div>
+                  <div className="mt-1">{getStatusBadge(normalizeStatus(selectedPartner.status))}</div>
                 </div>
               </div>
 
@@ -276,16 +286,16 @@ export default function DeliveryPartners() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                {selectedPartner.status === 'pending' && (
+                {normalizeStatus(selectedPartner.status) === 'pending' && (
                   <>
                     <button onClick={() => updateStatus(selectedPartner.id, 'approved')} disabled={updatingId === selectedPartner.id} className="flex-1 bg-green-500 text-white py-2.5 rounded-xl font-semibold hover:bg-green-600 disabled:opacity-50">✓ Approve</button>
                     <button onClick={() => updateStatus(selectedPartner.id, 'rejected')} disabled={updatingId === selectedPartner.id} className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-semibold hover:bg-red-600 disabled:opacity-50">✗ Reject</button>
                   </>
                 )}
-                {selectedPartner.status === 'approved' && (
+                {normalizeStatus(selectedPartner.status) === 'approved' && (
                   <button onClick={() => updateStatus(selectedPartner.id, 'rejected')} disabled={updatingId === selectedPartner.id} className="flex-1 bg-red-100 text-red-600 py-2.5 rounded-xl font-semibold hover:bg-red-200 disabled:opacity-50">Revoke Approval</button>
                 )}
-                {selectedPartner.status === 'rejected' && (
+                {normalizeStatus(selectedPartner.status) === 'rejected' && (
                   <button onClick={() => updateStatus(selectedPartner.id, 'approved')} disabled={updatingId === selectedPartner.id} className="flex-1 bg-green-100 text-green-600 py-2.5 rounded-xl font-semibold hover:bg-green-200 disabled:opacity-50">Re-approve</button>
                 )}
                 <button onClick={() => setSelectedPartner(null)} className="px-6 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-semibold hover:bg-gray-200">Close</button>
