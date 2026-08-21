@@ -59,10 +59,27 @@ export default function Food() {
       const vendorSnap = await getDocs(
         query(collection(db, 'vendors'), where('status', '==', 'approved'))
       );
+      // ✅ FIXED: vendor.area was compared with strict `===` against the
+      // dropdown's canonical area names, but the raw Firestore value could
+      // differ in case or spacing (e.g. "besant nagar", "Besant  Nagar")
+      // depending on how it was entered at registration. That silently
+      // dropped approved vendors from the "Vendor / Stall" dropdown even
+      // though they were correctly approved — showing "No approved vendors
+      // for this area" for areas that actually had vendors.
+      // This normalizes each vendor's area to match the canonical area name
+      // from the beaches collection (case/whitespace-insensitive), same
+      // idea as the normalizeArea() used for display grouping in
+      // Vendors.jsx, but applied here so the actual filtering works too.
+      const normalizeVendorArea = (rawArea) => {
+        if (!rawArea) return '';
+        const cleaned = rawArea.trim().toLowerCase().replace(/\s+/g, ' ');
+        const match = uniqueAreas.find(a => a.trim().toLowerCase().replace(/\s+/g, ' ') === cleaned);
+        return match || rawArea; // fallback: keep original if no canonical match found
+      };
       const vendorList = vendorSnap.docs.map(d => ({
         id: d.id,
         stallName: d.data().stallName || d.data().name || 'Unknown Stall',
-        area: d.data().area || '',
+        area: normalizeVendorArea(d.data().area || ''),
       }));
       setApprovedVendors(vendorList);
 
