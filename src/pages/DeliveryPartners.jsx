@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Bike, Search, CheckCircle, XCircle, Clock, X, User } from 'lucide-react';
-import { collection, onSnapshot, doc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function DeliveryPartners() {
@@ -10,7 +10,6 @@ export default function DeliveryPartners() {
   const [updatingId, setUpdatingId] = useState(null);
   const [selectedPartner, setSelectedPartner] = useState(null);
   const [onlineTab, setOnlineTab] = useState('All');
-  // ✅ ADDED: surfaces a real error to the admin instead of failing silently in console
   const [updateError, setUpdateError] = useState('');
 
   useEffect(() => {
@@ -29,12 +28,6 @@ export default function DeliveryPartners() {
     setUpdatingId(uid);
     setUpdateError('');
     try {
-      // ✅ FIXED: previously these were two separate updateDoc calls.
-      // If the first succeeded and the second failed (network blip, rule
-      // mismatch, etc.), deliveryPartners.status and partnerProfiles.status
-      // went out of sync — admin panel showed "Approved" while the partner
-      // app (which listens to partnerProfiles) never left the Pending screen.
-      // A batch write makes both updates succeed or fail together.
       const batch = writeBatch(db);
       batch.update(doc(db, 'deliveryPartners', uid), { status: newStatus });
       batch.update(doc(db, 'partnerProfiles', uid), { status: newStatus });
@@ -46,10 +39,29 @@ export default function DeliveryPartners() {
       }
     } catch (err) {
       console.error('Error updating status:', err);
-      // ✅ ADDED: previously this failure was invisible to the admin —
-      // the button just did nothing and the UI didn't change, so it looked
-      // like a broken button rather than a permissions/network error.
       setUpdateError('Failed to update status. Please check your connection and try again.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // ✅ ADDED: admin panel previously had no way to change a partner's
+  // duty/online status — it only showed a read-only 🟢/⚫ badge driven by
+  // the 'isOnline' field. This writes to that same field, so the badge
+  // here and in the partner's own app (which reads 'isOnline') stay in sync.
+  const handleToggleOnline = async (uid, currentOnline) => {
+    setUpdatingId(uid);
+    setUpdateError('');
+    try {
+      const newOnline = !currentOnline;
+      await updateDoc(doc(db, 'deliveryPartners', uid), { isOnline: newOnline });
+      setPartners(prev => prev.map(p => p.id === uid ? { ...p, isOnline: newOnline } : p));
+      if (selectedPartner?.id === uid) {
+        setSelectedPartner(prev => ({ ...prev, isOnline: newOnline }));
+      }
+    } catch (err) {
+      console.error('Error updating online status:', err);
+      setUpdateError('Failed to update duty status. Please check your connection and try again.');
     } finally {
       setUpdatingId(null);
     }
@@ -67,14 +79,6 @@ export default function DeliveryPartners() {
     return matchesSearch && matchesOnline;
   });
 
-  // ✅ FIXED: some partner docs (created before this field was consistently
-  // written, or via a registration flow that only set `status` on the
-  // partnerProfiles doc) have NO `status` field on the deliveryPartners doc.
-  // getStatusBadge already defaulted undefined -> "Pending" visually, but the
-  // action buttons below used a strict `partner.status === 'pending'` check,
-  // so undefined status showed the Pending badge with NO Approve/Reject
-  // buttons at all. This helper normalizes missing/falsy status to 'pending'
-  // everywhere it's used, so the badge and the buttons always agree.
   const normalizeStatus = (status) => status || 'pending';
 
   const getStatusBadge = (status) => {
@@ -105,7 +109,6 @@ export default function DeliveryPartners() {
         <span className="mt-3 sm:mt-0 text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">🟢 Live</span>
       </div>
 
-      {/* ✅ ADDED: visible error banner, only shows when an update actually fails */}
       {updateError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex justify-between items-center">
           <span>{updateError}</span>
@@ -169,6 +172,8 @@ export default function DeliveryPartners() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Area</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Age / Gender</th>
+                  {/* ✅ ADDED: Duty column so admin can toggle isOnline directly from the table */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duty</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
@@ -192,16 +197,28 @@ export default function DeliveryPartners() {
                         <div>
                           <div className="text-sm font-medium text-gray-900">{partner.name || '—'}</div>
                           <div className="text-xs text-gray-400">{partner.email || ''}</div>
-                          {partner.isOnline
-                            ? <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">🟢 Online</span>
-                            : <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">⚫ Offline</span>
-                          }
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-700">{partner.phone || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{partner.area || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-700">{partner.age || '—'} / {partner.gender || '—'}</td>
+                    {/* ✅ ADDED: toggle switch, mirrors the vendor duty toggle pattern already used in Vendors.jsx */}
+                    <td className="px-6 py-4 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleOnline(partner.id, partner.isOnline)}
+                          disabled={updatingId === partner.id}
+                          className={`relative inline-flex flex-shrink-0 h-5 w-10 border-2 border-transparent rounded-full cursor-pointer transition-colors duration-200 ${partner.isOnline ? 'bg-primary' : 'bg-gray-200'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ${partner.isOnline ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                        {partner.isOnline
+                          ? <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">🟢 Online</span>
+                          : <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">⚫ Offline</span>
+                        }
+                      </div>
+                    </td>
                     <td className="px-6 py-4">{getStatusBadge(normalizeStatus(partner.status))}</td>
                     <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                       {normalizeStatus(partner.status) === 'pending' && (
@@ -249,6 +266,20 @@ export default function DeliveryPartners() {
                   <p className="text-gray-500 text-sm">{selectedPartner.email || 'No email'}</p>
                   <div className="mt-1">{getStatusBadge(normalizeStatus(selectedPartner.status))}</div>
                 </div>
+              </div>
+
+              {/* ✅ ADDED: duty toggle also available inside the details modal */}
+              <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-4">
+                <button
+                  onClick={() => handleToggleOnline(selectedPartner.id, selectedPartner.isOnline)}
+                  disabled={updatingId === selectedPartner.id}
+                  className={`relative inline-flex flex-shrink-0 h-5 w-10 border-2 border-transparent rounded-full cursor-pointer transition-colors duration-200 ${selectedPartner.isOnline ? 'bg-primary' : 'bg-gray-200'}`}
+                >
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ${selectedPartner.isOnline ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+                <span className="text-sm font-semibold text-gray-700">
+                  {selectedPartner.isOnline ? '🟢 On Duty' : '⚫ Off Duty'}
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-xl p-4">

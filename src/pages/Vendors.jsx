@@ -60,8 +60,14 @@ export default function Vendors() {
 
   const handleToggleDuty = async (vendorId, currentDuty) => {
     try {
-      await updateDoc(doc(db, 'vendors', vendorId), { isOnDuty: !currentDuty });
-      setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, isOnDuty: !currentDuty } : v));
+      const newDuty = !currentDuty;
+      // ✅ FIXED: the vendor's own app (VendorDashboard.jsx) reads the
+      // 'isOpen' field to show duty status, not 'isOnDuty'. This admin
+      // toggle was only writing 'isOnDuty', so the admin table updated
+      // itself but the vendor never saw the change reflected in their app.
+      // Now both fields are written together so every reader stays in sync.
+      await updateDoc(doc(db, 'vendors', vendorId), { isOnDuty: newDuty, isOpen: newDuty });
+      setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, isOnDuty: newDuty, isOpen: newDuty } : v));
     } catch (error) {
       console.error('Error updating duty status:', error);
     }
@@ -197,7 +203,7 @@ export default function Vendors() {
         <span className="mt-3 sm:mt-0 text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">🟢 Live</span>
       </div>
 
-      {/* NEW: Area summary dashboard cards */}
+      {/* Area summary dashboard cards */}
       {!loading && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
