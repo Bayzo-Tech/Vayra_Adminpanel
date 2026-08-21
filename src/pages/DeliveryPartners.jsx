@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Bike, Search, CheckCircle, XCircle, Clock, X, User } from 'lucide-react';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function DeliveryPartners() {
@@ -10,6 +10,8 @@ export default function DeliveryPartners() {
   const [updatingId, setUpdatingId] = useState(null);
   const [selectedPartner, setSelectedPartner] = useState(null);
   const [onlineTab, setOnlineTab] = useState('All');
+  // ✅ ADDED: surfaces a real error to the admin instead of failing silently in console
+  const [updateError, setUpdateError] = useState('');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'deliveryPartners'), (snapshot) => {
@@ -25,15 +27,29 @@ export default function DeliveryPartners() {
 
   const updateStatus = async (uid, newStatus) => {
     setUpdatingId(uid);
+    setUpdateError('');
     try {
-      await updateDoc(doc(db, 'deliveryPartners', uid), { status: newStatus });
-      await updateDoc(doc(db, 'partnerProfiles', uid), { status: newStatus });
+      // ✅ FIXED: previously these were two separate updateDoc calls.
+      // If the first succeeded and the second failed (network blip, rule
+      // mismatch, etc.), deliveryPartners.status and partnerProfiles.status
+      // went out of sync — admin panel showed "Approved" while the partner
+      // app (which listens to partnerProfiles) never left the Pending screen.
+      // A batch write makes both updates succeed or fail together.
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'deliveryPartners', uid), { status: newStatus });
+      batch.update(doc(db, 'partnerProfiles', uid), { status: newStatus });
+      await batch.commit();
+
       setPartners(prev => prev.map(p => p.id === uid ? { ...p, status: newStatus } : p));
       if (selectedPartner?.id === uid) {
         setSelectedPartner(prev => ({ ...prev, status: newStatus }));
       }
     } catch (err) {
       console.error('Error updating status:', err);
+      // ✅ ADDED: previously this failure was invisible to the admin —
+      // the button just did nothing and the UI didn't change, so it looked
+      // like a broken button rather than a permissions/network error.
+      setUpdateError('Failed to update status. Please check your connection and try again.');
     } finally {
       setUpdatingId(null);
     }
@@ -78,6 +94,16 @@ export default function DeliveryPartners() {
         </div>
         <span className="mt-3 sm:mt-0 text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-3 py-2 rounded-lg">🟢 Live</span>
       </div>
+
+      {/* ✅ ADDED: visible error banner, only shows when an update actually fails */}
+      {updateError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex justify-between items-center">
+          <span>{updateError}</span>
+          <button onClick={() => setUpdateError('')} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="relative max-w-md w-full">
